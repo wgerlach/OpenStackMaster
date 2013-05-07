@@ -32,4 +32,52 @@ Options provided at command line or in the IpFile have higher priority of course
 
 Usage Example
 -------------
-soon
+
+example with vmAWE.pl 
+
+    Nova actions:
+     --create=i            create i new instances from snapshot/image
+     --delete              use with --ipfile (recommended) or --iplist
+     --info                list all instances, volumes, flavors...
+     --listgroup           list all instances with prefix --groupname
+     --savegroup           save group with prefix --groupname in ipfile
+
+    VM actions:
+     --sshtest             try to ssh all instances
+
+    Create options:
+     --flavor_name=s       optional, use with --create
+     --image=s             image ID, use with --create
+     --image_name=s        image name, use with action --create
+     --sshkey=s            required, path to ssh key file
+     --key_name=s          required, key_name as in Openstack
+     --groupname=s         optional, Openstack instance prefix name
+     --nogroupcheck        optional, disables check for unique groupname
+     --onlygroupname       optional, instance names all equal groupname
+     --disksize=i          optional, in GB, default 300GB
+     --wantip              optional, external IP, only with count=1
+     --user-data=s         optional, pass user data file to new instances
+     --saveIpToFile        optional, saves list of IPs in file (recommended)
+
+    Specify existing VMs for actions and deletion:
+     --ipfile=s            file containing list of ips with names
+     --iplist=s@           list of ips, comma separated, use with --sshkey
+
+    AWE actions (independent, can be combinded):
+     --addscripts=s        list of scripts, comma separated
+     --awecfg=s            see --serverurl and --awegroup
+     --update              installs or updates AWE client
+     --startawe            
+     --stopawe             
+     --restartawe          
+     --command=s           pass a command to all VMs, e.g. "df -h"
+     --example             example for executing perl subroutine remotely
+
+    AWE options:
+     --serverurl=s         optional, use with action --awecfg
+     --awegroup=s          optional, use with actions --awecfg
+
+ 
+     Option priorities: 1) command line 2) ipfile 3) ~/.bulkvm ; for 2 and 3 use: sshkey=~/.ssh/dm_new_magellan.pem
+ 
+     example: ./vmAWE.pl --create 2 --sshkey ~/.ssh/x.pem --key_name x --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
