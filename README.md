@@ -5,7 +5,7 @@ Perl modules for the instantiation of, configuration of and communication with m
 
 Requirements
 ------------
-Nova-Tools
+Nova-Tools (http://docs.openstack.org/cli/quick-start/content/install_openstack_nova_cli.html)<br>
 Perl modules: Parallel::ForkManager 0.7.6, File::Flock
 
 ManageBulkInstances.pm 
