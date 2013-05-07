@@ -81,3 +81,5 @@ example with vmAWE.pl
      Option priorities: 1) command line 2) ipfile 3) ~/.bulkvm ; for 2 and 3 use: sshkey=~/.ssh/dm_new_magellan.pem
  
      example: ./vmAWE.pl --create 2 --sshkey ~/.ssh/x.pem --key_name x --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
+
+Note that all options except AWE actions and AWE options are generic, that means they are inherited from the ManageBulkInstances module. Only the AWE-specifc options are defined in the vmAWE.pl script.
