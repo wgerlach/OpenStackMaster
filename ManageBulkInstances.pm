@@ -10,7 +10,7 @@ eval "use Parallel::ForkManager 0.7.6; 1"
 	or die "module required: sudo apt-get install build-essential ; perl -MCPAN -e \'install Parallel::ForkManager\'";
 
 eval "use File::Flock; 1"
-	or die "module required: sudo apt-get install libfile-flock-perl ; perl -MCPAN -e \'install File::Flock\'";
+	or die "module required: sudo apt-get install libfile-flock-perl OR perl -MCPAN -e \'install File::Flock\'";
 
 #use Parallel::ForkManager 0.7.6;
 #new version: sudo apt-get install build-essential ; perl -MCPAN -e 'install Parallel::ForkManager'
@@ -20,7 +20,9 @@ use lib $ENV{"HOME"}."/projects/libraries/"; # path to SubmitVM module
 use SubmitVM;
 use Getopt::Long;
 
-
+use LWP::UserAgent;
+use JSON;
+use Data::Dumper;
 
 # purpose of this module: wrapper for nova tools
 
@@ -35,10 +37,17 @@ use Getopt::Long;
 #our $sshkey = "~/.ssh/dm_new_magellan.pem";
 
 
-#my $ssh_options = "-o StrictHostKeyChecking=no -i $sshkey"; # StrictHostKeyChecking=no because I am too lazy to check for the question.
+my $os_tenant_id = $ENV{'OS_TENANT_ID'};
+my $os_username = $ENV{'OS_USERNAME'};
+my $os_password = $ENV{'OS_PASSWORD'};
+my $os_auth_url = $ENV{'OS_AUTH_URL'};
+
+
+
+
 my $ssh_options = "-o StrictHostKeyChecking=no"; # StrictHostKeyChecking=no because I am too lazy to check for the question.
-#my $ssh = "ssh ".$ssh_options;
-my $vm_user = "ubuntu";
+
+my $vm_user = 'ubuntu';
 
 my @hobbitlist = ("Frodo","Samwise","Meriadoc","Peregrin","Gandalf","Aragorn","Legolas","Gimli","Denethor","Boromir","Faramir","Galadriel","Celeborn","Elrond","Bilbo","Theoden","Eomer","Eowyn","Treebeard");
 
@@ -48,8 +57,15 @@ my $default_namelist = \@hobbitlist;
 our $nova = "nova --insecure --no-cache ";
 
 
+my $os_token;
+
+
+my $nova_endpoint_uri;
+my $volume_endpoint_uri;
+
 my $timeout=30;
 
+my $debug=0;
 
 our $options_basicactions = ["Nova actions",
 							"create=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHash,
@@ -72,7 +88,9 @@ our $options_create_opts = ["Create options",
 							"groupname=s"	=> "optional, Openstack instance prefix name",				undef,
 							"nogroupcheck"	=> "optional, disables check for unique groupname",			undef,
 							"onlygroupname"	=> "optional, instance names all equal groupname",			undef,
-							"disksize=i"	=> "optional, in GB, default 300GB",						undef,
+							"owner=s"		=> "optional, metadata information on VM, default os_username",	undef,
+							"noownercheck"	=> "optional, disables owner check",						undef,
+							"disksize=i"	=> "optional, in GB, creates, attaches and mounts volume",	undef,
 							"wantip"		=> "optional, external IP, only with count=1",				undef,
 							"user-data=s"	=> "optional, pass user data file to new instances",		undef,
 							"saveIpToFile"	=> "optional, saves list of IPs in file (recommended)",		undef
@@ -314,11 +332,13 @@ sub getIP {
 	my $newip = undef;
 	
 	# try to find available IP
-	my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", 0);
+	#my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", 0);
+	my $floating_ips = openstack_api('GET', 'nova', '/os-floating-ips');
 	
-	foreach my $ip (keys %$nova_floating_ip_list) {
-		if ($nova_floating_ip_list->{$ip}{"Instance Id"} eq "None" ) {
-			$newip = $ip;
+	
+	foreach my $ip_hash ( @{$floating_ips->{'floating_ips'}} ) {
+		unless (defined $ip_hash->{'instance_id'}) {
+			$newip = $ip_hash->{'ip'};
 			last;
 		}
 	}
@@ -329,8 +349,10 @@ sub getIP {
 	
 	# no IP found, trt to request a new one:
 	my $nova_newip_hash = nova2hash($nova." floating-ip-create");
+	my $post_floating_ips= openstack_api('POST', 'nova', '/os-floating-ips', { 'pool' => 'nova'});
 	
-	if (defined $nova_newip_hash->{"ERROR"}) {
+	unless (defined $post_floating_ips->{'floating_ip'}->{'ip'} ) {
+	#if (defined $nova_newip_hash->{"ERROR"}) {
 		return undef;
 	}
 	
@@ -339,7 +361,6 @@ sub getIP {
 }
 
 sub systemp {
-	#my $command = shift(@_);
 	print join(' ', @_)."\n";
 	return system(@_);
 }
@@ -397,61 +418,126 @@ sub volumeAttachWait {
 
 	
 	#  attach volume to instance
-	my $volumeattach = nova2hash($nova." volume-attach $instance_id $volume_id $device", 1);
-	if (defined $volumeattach->{"ERROR"}) {
-		return 0;
+	#my $volumeattach = nova2hash($nova." volume-attach $instance_id $volume_id $device", 1);
+	
+	my $attach_request_json =	{	'volumeAttachment' =>	{
+																'volumeId' => $volume_id,
+																'device' => $device
+															}
+								};
+	
+	my $new_attachment = openstack_api('POST', 'nova', '/servers/'.$instance_id.'/os-volume_attachments', $attach_request_json)->{'volumeAttachment'};
+	#print Dumper($new_attachment);
+	
+	
+	my $time_out = 0;
+	while (1) {
+		my $attachment_info = openstack_api('GET', 'volume', '/volumes/'.$volume_id)->{'volume'};
+		#print Dumper($attachment_info);
+		if (lc($attachment_info->{'status'}) eq 'in-use' ) {
+			return 1; # good
+		} elsif (lc($attachment_info->{'status'}) eq 'error') {
+			print Dumper($attachment_info);
+			return 0; # bad
+		}
+		$time_out += 5;
+		if ($time_out > 60) {
+			print Dumper($attachment_info);
+			return 0; # bad
+		}
+		sleep(5);
 	}
 	
 	
-	return waitNovaHashValue("volume-show $volume_id", "status", "Value", "in-use", 10, 60);
-	
+	return 0;
 
 }
 
 sub volumeCreateWait{
 	my $instname = shift(@_);
 	my $disksize = shift(@_);
+	my $owner = shift(@_);
 	
+	unless (defined $owner) {
+		$owner = $os_username;
+	}
+		
+	my $volume_request_json = { 'volume' => {	'display_name' => $instname,
+												'size' => $disksize,
+												'display_description' => 'a bulkvm volume',
+												'metadata' => {'owner' => $owner}
+											}
+								};
+	
+		
 	# create volume and wait for it to be ready
-	my $disk_hash = nova2hash($nova." volume-create --display-name ".$instname." ".$disksize, 1);
-	if (defined $disk_hash->{"ERROR"}) {
+	#my $disk_hash = nova2hash($nova." volume-create --display-name ".$instname." ".$disksize, 1);
+	
+	my $try_create=0;
+	my $new_volume_hash=undef;
+	
+	while (not defined $new_volume_hash) {
+		$try_create++;
+		$new_volume_hash = openstack_api('POST', 'volume', '/volumes', $volume_request_json);
+		
+		unless (defined $new_volume_hash) {
+			
+			if ($try_create >= 5) {
+				last;
+			}
+			print STDERR "warning: (volumeCreateWait) new_volume_hash not defined, retry... \n";
+			sleep(5);
+		}
+	}
+	unless (defined $new_volume_hash) {
+		print STDERR "error: (volumeCreateWait) new_volume_hash not defined \n";
 		return 0;
 	}
-	my $volume_id = getHashValue($disk_hash, "id", "Value");
+	
+	my $new_volume = $new_volume_hash->{'volume'};
+	
+	my $volume_id = $new_volume->{'id'};
+	
+	unless (defined $volume_id) {
+		print Dumper($new_volume_hash)."\n";
+		print STDERR "error: (volumeCreateWait) volume_id not defined \n";
+		return 0;
+	}
+	
+	if ($volume_id==0) {
+		print Dumper($new_volume_hash)."\n";
+		print STDERR "error: (volumeCreateWait) volume_id==0\n";
+		return 0;
+	}
 	
 	sleep 3;
-	
-	my $disk_show = nova2hash($nova." volume-show ".$volume_id, 1);
-	if (defined $disk_show->{"ERROR"}) {
-		return 0;
-	}
-	my $status = getHashValue($disk_show, "status", "Value");
-	
 
-	
+	my $status = "";
 	my $wait_sec = 0;
-	while ($status ne "available") {
+	while (lc($status) ne "available") {
 		
-		if ($status eq "error") {
+		my $volume_info = openstack_api('GET', 'volume', '/volumes/'.$volume_id)->{'volume'};
+		$status = $volume_info->{'status'};
+		
+		if (lc($status) eq "error") {
 			# delete volume and try again
+			print STDERR "error: (volumeCreateWait) volume in error state\n";
 			systemp($nova." volume-delete ".$volume_id);
 			return 0;
 		}
 		
+		if (lc($status) eq "available") {
+			last;
+		}
 		
 		if ($wait_sec > 30) {
-			print STDERR "error: disk allocation time out\n";
+			print STDERR "error: volume creation time out\n";
 			return 0;
 			
 		}
 		
 		sleep 5;
 		$wait_sec += 5;
-		$disk_show = nova2hash($nova." volume-show ".$volume_id, 1);
-		if (defined $disk_show->{"ERROR"}) {
-			return 0;
-		}
-		$status = getHashValue($disk_show, "status", "Value");
 		
 	}
 	return $volume_id;
@@ -461,31 +547,384 @@ sub volumeCreateWait{
 #########################################################################
 
 
+sub json_request {
+	
+	my $type = shift(@_); # 'POST', 'GET'...
+	my $uri = shift(@_);
+	
+	my $json_query_hash;
+	if ($type eq 'POST') {
+		$json_query_hash = shift(@_);
+	}
+	
+	
+	
+	my $json;
+	if ($type eq 'POST') {
+		$json =  JSON::encode_json($json_query_hash ); #'{"username":"foo","password":"bar"}';
+		print "json: ".$json."\n";
+	}
+	print "uri: $uri\n";
+	
+	
+	my $req = HTTP::Request->new( $type, $uri );
+	$req->header( 'Content-Type' => 'application/json' );
+	
+	if (defined $os_token) {
+		$req->header( 'X-Auth-Token' => $os_token );
+		
+		$req->header( 'X-Auth-Project-Id' => 'MG-RAST-DEV' );
+		$req->header( 'User-Agent' => 'wolfgang' );
+	}
+	
+	if ($type eq 'POST') {
+		$req->content( $json );
+	}
+		
+	
+	my $lwp = LWP::UserAgent->new;
+	
+	$lwp->ssl_opts( verify_hostname => 0 ) ; # disable SSL  # TODO better use certificate
+	
+	my $res = $lwp->request( $req );
+	
+	my $ret_hash;
+	if ($res->is_success) {
+		#print "decoded_content: ".$res->decoded_content."\n\n";
+	} else {
+		print STDERR "error: (json_request) \"".$res->status_line, "\"\n\n";
+		$ret_hash = JSON::decode_json($res->decoded_content);
+		
+		if (defined $ret_hash->{'badRequest'}) {
+			print STDERR "json badRequest messsage: ".$ret_hash->{'badRequest'}->{'message'}||"NA"."\n";
+			print STDERR "json badRequest code: ".$ret_hash->{'badRequest'}->{'code'}||"NA"."\n";
+		}
+		
+		if (defined $ret_hash) {
+			print Dumper($ret_hash)."\n";
+		}
+		
+		return undef;
+		#return $ret_hash;
+	}
+
+	#print json_pretty_print($res->decoded_content)."\n\n";
+	
+	
+	$ret_hash = JSON::decode_json($res->decoded_content);
+	
+	if ($debug==1) {
+		print Dumper($ret_hash);
+	}
+	
+	return $ret_hash;
+}
+
+
+sub os_get_token {
+	
+
+	# first get token if not already available  TODO: check if token is still valid
+	unless (defined $os_token) {
+		
+		# API: http://api.openstack.org/api-ref.html
+		
+				
+		
+		my ($base_url) = $os_auth_url =~ /(https?\:\/\/.*:\d+)/;
+		
+		unless (defined $base_url) {
+			die;
+		}
+		
+		print "base_url: ".$base_url."\n";
+		
+		
+		my $json_query_hash = {
+			"auth"  => {"passwordCredentials" => {	"username" => $os_username,
+				"password" => $os_password} ,
+				"tenantId" => $os_tenant_id # TODO use tenant name ?
+			}
+		};
+		
+		
+		my $ret_hash = json_request('POST', $base_url."/v2.0/tokens", $json_query_hash);
+		
+		
+		
+		print "token: ".$ret_hash->{"access"}->{"token"}->{"id"}."\n";
+		
+		$os_token =		$ret_hash->{"access"}->{"token"}->{"id"};
+		$os_tenant_id = $ret_hash->{"access"}->{"token"}->{"tenant"}->{"id"};
+		
+		
+		#get service uris
+		$volume_endpoint_uri=undef;
+		$nova_endpoint_uri = undef;
+		
+		foreach my $service (@{$ret_hash->{"access"}->{"serviceCatalog"}}) {
+			#print "service: " .$service."\n";
+			print "service_name: " . $service->{'name'} ."\n";
+			
+			if ( $service->{'name'} eq "nova" ) {
+				$nova_endpoint_uri = @{$service->{'endpoints'}}[0]->{'publicURL'};
+			} elsif ( $service->{'name'} eq "volume" ) {
+				$volume_endpoint_uri = @{$service->{'endpoints'}}[0]->{'publicURL'};
+			}
+		}
+		unless (defined $nova_endpoint_uri) {
+			die;
+		}
+		
+	}
+
+	
+		
+	
+}
+
+
+
+sub openstack_api {
+	
+	my $type = shift(@_); # 'POST', 'GET'...
+	my $service = shift(@_); # nova, volume etc
+	my $path = shift(@_);
+	
+	my $json_query_hash;
+	
+	if ($type eq 'POST') {
+		$json_query_hash = shift(@_);
+	}
+	
+	
+	# make sure we have a token
+	os_get_token();
+	
+	my $uri;
+	if ($service eq 'nova') {
+		$uri = $nova_endpoint_uri . $path;
+	} elsif ($service eq 'volume') {
+		$uri = $volume_endpoint_uri . $path;
+	} else {
+		die;
+	}
+	#my $json_req_result;
+	
+	
+	my $json_req_result = json_request($type, $uri, $json_query_hash);
+	#if ($type eq 'POST') {
+	#	$json_req_result = json_request($type, $json_query_hash, $uri);
+	#} else {
+	#	$json_req_result = json_request($type, $uri);
+	#}
+	
+	
+	return $json_req_result;
+}
+
+sub os_server_detail_print {
+	
+	# ID  | Name | Status  | Networks
+	my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
+	
+	
+	require Text::ASCIITable;
+	
+	my $t = Text::ASCIITable->new({ headingText => 'Servers' });
+	
+	$t->setCols('id', 'name', 'status', 'networks');
+	$t->alignCol('networks','left');
+	
+	my @table;
+	my $simple_hash;
+	foreach my $server (@{$servers_details->{'servers'}}) {
+		
+		my @networks;
+		foreach my $address (@{$server->{'addresses'}->{'service'}}) {
+			push(@networks, $address->{'addr'});
+		}
+		
+		my $server_id = $server->{'id'};
+		$simple_hash->{$server_id}->{'name'}		= $server->{'name'};
+		$simple_hash->{$server_id}->{'status'}		= $server->{'status'};
+		$simple_hash->{$server_id}->{'networks'}	= join(',',@networks);
+		$t->addRow( $server->{'id'} , $server->{'name'}, $server->{'status'}, join(',',@networks) );
+	}
+	
+	print $t;
+	
+}
+
+
+sub os_flavor_detail_print {
+	
+	
+	my $flavors_detail = openstack_api('GET', 'nova', '/flavors/detail');
+	
+	#print json_pretty_print($flavors_detail)."\n";
+	#return;
+	require Text::ASCIITable;
+	
+	my $t = Text::ASCIITable->new({ headingText => 'Flavors' , chaining => 1 });
+	
+	$t->setCols('ID', 'Name', 'RAM', 'Disk', 'VCPUs');
+	
+	
+	my @table;
+	foreach my $flavor (@{$flavors_detail->{'flavors'}}) {
+		 push(@table, [$flavor->{'id'}, $flavor->{'name'}, $flavor->{'ram'}, $flavor->{'disk'}, $flavor->{'vcpus'}]);
+	}
+	
+	@table = sort {$a->[0] <=> $b->[0]} @table;
+	
+	foreach my $row (@table) {
+		$t->addRow($row);
+	}
+	print $t;
+	
+}
+
+sub os_images_detail_print {
+	
+	
+	my $images_detail = openstack_api('GET', 'nova', '/images/detail');
+	
+	#print json_pretty_print($images_detail)."\n";
+	#return;
+	require Text::ASCIITable;
+	
+	my $t = Text::ASCIITable->new({ headingText => 'Images' });
+	
+	$t->setCols('ID', 'Name', 'Status', 'Server');
+	
+	
+	my @table;
+	foreach my $image (@{$images_detail->{'images'}}) {
+		
+		my $server_id="";
+		if (defined $image->{'server'}) {
+			$server_id = $image->{'server'}->{'id'} || "" ;
+		}
+		
+		push(@table, [$image->{'id'}, $image->{'name'}, $image->{'status'}, $server_id]);
+	}
+	
+	@table = sort {$a->[1] cmp $b->[1]} @table;
+	
+	foreach my $row (@table) {
+		$t->addRow($row);
+	}
+	print $t;
+	
+}
+
+
+sub os_keypairs_print {
+	
+	
+	my $keypairs = openstack_api('GET', 'nova', '/os-keypairs');
+	
+	#print json_pretty_print($images_detail)."\n";
+	#return;
+	require Text::ASCIITable;
+	
+	my $t = Text::ASCIITable->new({ headingText => 'Keypairs' });
+	
+	$t->setCols('Name', 'Fingerprint');
+	
+	
+	my @table;
+	foreach my $keypair (@{$keypairs->{'keypairs'}}) {
+		my $key = $keypair->{"keypair"};
+			
+		push(@table, [$key->{'name'}, $key->{'fingerprint'}]);
+	}
+	
+	@table = sort {$a->[1] cmp $b->[1]} @table;
+	
+	foreach my $row (@table) {
+		$t->addRow($row);
+	}
+	print $t;
+	
+}
+
+
+
+sub os_floating_ips_print {
+	
+	my $floating_ips = openstack_api('GET', 'nova', '/os-floating-ips');
+	
+	
+	#print Dumper($floating_ips);
+	#return;
+	
+	require Text::ASCIITable;
+	
+	my $t = Text::ASCIITable->new({ headingText => 'Floating IPs' });
+	
+	$t->setCols('IP', 'Instance ID', 'Fixed IP', 'Pool');
+	$t->alignCol('IP','left');
+	$t->alignCol('Fixed IP','left');
+	
+	my @table;
+	foreach my $floating_ip (@{$floating_ips->{'floating_ips'}}) {
+		
+		push(@table, [$floating_ip->{'ip'}, $floating_ip->{'instance_id'}||"None", $floating_ip->{'fixed_ip'}||"None", $floating_ip->{'pool'}||"None"]);
+	}
+	
+	#@table = sort {$a->[1] cmp $b->[1]} @table;
+	
+	foreach my $row (@table) {
+		$t->addRow($row);
+	}
+	print $t;
+	
+}
+
+sub json_pretty_print {
+	
+	my $json_text = shift(@_);
+	
+	my $json2 = JSON->new->allow_nonref;
+	
+	my $pretty_printed = $json2->pretty->encode( $json2->decode($json_text) ); # pretty-printing
+	
+	return $pretty_printed;
+	
+}
+
+
+
 
 sub info {
 	my $printtable = 1;
 	
-	my $nova_flavor_list = nova2hash($nova." flavor-list", $printtable);
-	
-	my $nova_image_list = nova2hash($nova." image-list", $printtable);
-	#if (defined $image) {
-	#	unless (defined $nova_image_list->{$image}) {
-	#		print STDERR "error: image not found: \"$image\"\n";
-	#		exit(1);
-	#	}
-	#}
-	
-	my $nova_keypair_list = nova2hash($nova." keypair-list", $printtable);
-	#unless (defined $nova_keypair_list->{$key_name}) {
-	#	print STDERR "error: keypair not found\n";
-	#	exit(1);
-	#}
-	
-	my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", $printtable);
-	
-	my $nova_list = nova2hash($nova." list", $printtable);
+	#my $my_volumes = openstack_api('GET', 'volume', '/volumes');
+	#print Dumper($my_volumes);
 
 	
+	os_flavor_detail_print();
+	#my $nova_flavor_list = nova2hash($nova." flavor-list", $printtable);
+	
+	os_images_detail_print();
+	#my $nova_image_list = nova2hash($nova." image-list", $printtable);
+	
+	
+	os_keypairs_print();
+	#my $nova_keypair_list = nova2hash($nova." keypair-list", $printtable);
+	
+	
+	os_floating_ips_print();
+	#my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", $printtable);
+	
+	
+	os_server_detail_print();
+	#my $nova_list = nova2hash($nova." list", $printtable);
+
+	
+		
 }
 
 # deprecated !
@@ -553,35 +992,40 @@ sub createNew {
 	}
 	
 	
-	my $nova_image_list = nova2hash($nova." image-list", 0);
 	
-	my $image = $arg_hash->{"image"};
+	my $images_detail = openstack_api('GET', 'nova', '/images/detail');
+	
+	my $image_id = $arg_hash->{"image"};
 	my $image_name;
-	unless (defined $image) {
+	unless (defined $image_id) {
 		$image_name = $arg_hash->{"image_name"} || $image_name;
 		print "searching for image with name \"$image_name\"\n";
 		
 		
-		foreach my $id (keys %$nova_image_list) {
-			if ($nova_image_list->{$id}{Name} eq $image_name) {
-				if (defined $image) {
+		foreach my $image_object (@{$images_detail->{'images'}}) {
+			
+			if ($image_object->{'name'} eq $image_name) {
+				if (defined $image_id) {
 					print "error: image_name \"$image_name\" not unique. Use image ID with --image instead.\n";
 					return undef;
 				}
 				
-				$image=$id;
+				$image_id=$image_object->{'id'};
 			}
 		}
 
+		unless (defined $image_id) {
+			print "error: image_id undefined \n";
+			return undef;
+		}
+		
+		$arg_hash->{"image"} = $image_id
 	}
-	unless (defined $image) {
-		print "error: image undefined \n";
-		return undef;
-	}
+	
 	
 	
 	#print $image_name."\n";
-	print "using image id: ".$image."\n";
+	print "using image id: ".$image_id."\n";
 	#exit(1);
 	
 	my $key_name = $arg_hash->{"key_name"};
@@ -598,6 +1042,7 @@ sub createNew {
 	
 	#$ssh_options = "-o StrictHostKeyChecking=no -i $sshkey";
 	my $ssh = "ssh $ssh_options -i $sshkey";
+	my $scp = "scp $ssh_options -i $sshkey";
 	
 	unless (defined $flavor_name) {
 		print STDERR "error: flavor_name not defined\n";
@@ -607,26 +1052,34 @@ sub createNew {
 	
 	my $printtable = 0;
 	
-	my $nova_flavor_list = nova2hash($nova." flavor-list", $printtable);
 	
-	#my $nova_image_list = nova2hash($nova." image-list", $printtable);
-	#if (defined $image) {
-	#	unless (defined $nova_image_list->{$image}) {
-	#		print STDERR "error: image not found: \"$image\"\n";
-	#		return undef;
-	#	}
-	#}
+	my $flavors_detail = openstack_api('GET', 'nova', '/flavors/detail');
 	
-	my $nova_keypair_list = nova2hash($nova." keypair-list", $printtable);
-	unless (defined $nova_keypair_list->{$key_name}) {
-		print STDERR "error: keypair \"$key_name\" not found\n";
+	
+	
+	
+	my $keypairs = openstack_api('GET', 'nova', '/os-keypairs');
+		
+	my $found_keypair=0;
+	foreach my $keypair (@{$keypairs->{'keypairs'}}) {
+		if ($keypair->{'keypair'}->{'name'} eq $key_name) {
+			$found_keypair=1;
+			last;
+		}
+	}
+	
+	if ($found_keypair == 0) {
+		print STDERR "error: keypair $key_name not found\n";
 		return undef;
 	}
 	
-	my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", $printtable);
 	
-	my $nova_list = nova2hash($nova." list", $printtable);
 	
+	
+	
+	
+	
+	my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
 
 	
 	
@@ -658,45 +1111,46 @@ sub createNew {
 	#$flavorname
 	# map flavor_name to flavor_id
 	my $flavor_id=undef;
-	foreach my $id (keys %$nova_flavor_list) {
-		if ($nova_flavor_list->{$id}{Name} eq $flavor_name) {
-			$flavor_id=$id;
-		}
-	}
+	
 	unless (defined $flavor_id) {
-		print STDERR "error: could not find flavour name \"".$flavor_name."\"\n";
-		return undef;
+		foreach my $flavor (@{$flavors_detail->{'flavors'}}) {
+			if ($flavor->{'name'} eq $flavor_name) {
+				
+				if (defined $flavor_id) {
+					print STDERR "error: flavor_name is not unique\n";
+					exit(1);
+				}
+				
+				$flavor_id=$flavor->{'id'};
+			}
+		}
+		unless (defined $flavor_id) {
+			print STDERR "error: could not find flavour name \"".$flavor_name."\"\n";
+			return undef;
+		}
+		
 	}
-	
-	
-	unless (defined $nova_flavor_list->{$flavor_id}) {
-		print STDERR "error: flavorid $flavor_id not found\n";
-		return undef;
-	}
-	
-	#unless (defined($groupname)) {
-	#	print STDERR "error: groupname not defined\n";
-	#	return undef;
-	#}
-	
+	$arg_hash->{"flavor_id"} = $flavor_id;
+		
 	if (length($groupname) <= 4) {
 		print STDERR "error: name \"$groupname\" too short\n";
 		return undef;
 	}
 	
 	my %names_used;
-	foreach my $id (keys %$nova_list) {
-		if ($nova_list->{$id}{Name} =~ /^$groupname/ ) {
+	
+	foreach my $server (@{$servers_details->{'servers'}}) {
+		if ($server->{'name'} =~ /^$groupname/ ) {
 			if (defined $arg_hash->{"nogroupcheck"}) {
-				my ($old_name) = $nova_list->{$id}{Name} =~ /^$groupname\_(\S+)/;
+				my ($old_name) = $server->{'name'} =~ /^$groupname\_(\S+)/;
 				unless (defined $old_name) {
-					print STDERR "group-specific instance name not found:".$nova_list->{$id}{Name}."\n";
+					print STDERR "group-specific instance name not found:".$server->{'name'}."\n";
 					exit(1);
 				}
 				$names_used{$old_name}=1;
 			} else {
 				print "error: an instance with that groupname already exists, groupname: $groupname\n";
-				print "name: ".$nova_list->{$id}{Name}." ID: ".$id."\n";
+				print "name: ".$server->{'name'}." ID: ".$server->{'id'}."\n";
 				return undef;
 			}
 		}
@@ -718,7 +1172,9 @@ sub createNew {
 		@nameslist=@tmp_names;
 	}
 	
-	my $manager = new Parallel::ForkManager( (8, $count)[8 > $count] ); # min 5 $count
+	my $max_threads = 8;
+	
+	my $manager = new Parallel::ForkManager( ($max_threads, $count)[$max_threads > $count] ); # min 5 $count
 	
 	my @children_iplist=();
 	
@@ -774,202 +1230,398 @@ sub createNew {
 		########## CHILD START ############
 		$manager->start($i) and next;
 		
-		my $return_value;
-		my $return_data;
-		
-		#major components (delete if fails)
-		my $instance_id;
-		my $volume_id;
-		my $newip;
-		
-		my $instance_ip;
-		
-		my $crashed = 0;
-		my $try_counter = 0;
-		MAINWHILE: while (1) {
-			$try_counter++;
-			
-			# delete stuff from previous crash
-			if ($crashed == 1) {
-				print STDERR "delete previous instance since something went wrong...\n";
-				if (defined $instance_id) {
-					systemp($nova." delete ".$instance_id);
-				}
+		my ($return_value, $return_data_ref) = createSingleServer($arg_hash, $i , $ssh, $scp, \@nameslist);
 				
-				if (defined $volume_id) {
-					my $volshow = nova2hash($nova." volume-show ".$volume_id, 0);
-					while ($volshow->{'status'}{'Value'} ne 'available' ) {
-						sleep 5;
-						$volshow = nova2hash($nova." volume-show ".$volume_id, 0);
-					}
-					systemp($nova." volume-delete ".$volume_id);
-				}
-				
-				if (defined $newip) {
-					systemp($nova." floating-ip-delete ".$newip);
-				}
-				$instance_id=undef;
-				$volume_id=undef;
-				$newip=undef;
-				$crashed = 0;
-				sleep 20;
-			}
-			if ($try_counter > 3 ) {
-				print STDERR "instance creation failed three times. Stop.\n";
-				return undef;
-			}
+		$manager->finish($return_value, $return_data_ref);
+		########## CHILD END ############
+	}
+	
+
+	
+	
+	
+	my $active = 0;
+	my $build = 0;
+	while ($active < $count) {
+		#$nova_list = nova2hash($nova." list", 0);
+		my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
+		$active = 0;
+		$build = 0;
+		#foreach my $id (keys %$nova_list) {
+		foreach my $server (@{$servers_details->{'servers'}}) {
 			
-			# create name for new instance
-			my $instname=$groupname;
-			
-			unless (defined ($arg_hash->{"onlygroupname"}) ) {
-				$instname .= "_";
-				if (defined $nameslist[$i]) {
-					$instname .= $nameslist[$i];
-				} else {
-					$instname .= $i;
+			if ($server->{'name'} =~ /^$groupname/ ) {
+				#print "got: ".$nova_list->{$id}{Status}."\n";
+				if ($server->{'status'} eq "ACTIVE") {
+					$active++;
+				} elsif ($server->{'status'} eq "BUILD") {
+					$build++;
 				}
 			}
-			
-			#start instance
-			my $new_instance_command = $nova." boot --poll --flavor $flavor_id --image $image --key_name $key_name ".$instname;
-			
-			if (defined $arg_hash->{"user-data"}) {
-				$new_instance_command .= " --user-data ".$arg_hash->{"user-data"};
-			}
-			
-			my $new_instance = nova2hash($new_instance_command, 1);
-			if (defined $new_instance->{"ERROR"}) {
-				print STDERR "error: new_instance\n";
-				print STDERR "ERRORMESSAGE: ".$new_instance->{"ERRORMESSAGE"}."\n";
-				if (index($new_instance->{"ERRORMESSAGE"}, "Quota exceeded") > -1) {
-					print STDERR "error: Quota exceeded, makes no sense to continue.\n";
-					
-					system("touch STOPBULKJOBS");
-					exit(1);
-				}
-				$crashed = 1;
-				next;
-			}
-			$instance_id = getHashValue($new_instance, "id", "Value");
-			
-			my $disk_hash;
-			
-			my $status;
-			
-			#create volume
-			if ($disksize > 0) {
-				
-				$volume_id = volumeCreateWait($instname, $disksize);
-				if ($volume_id == 0 ) {
-					print STDERR "error: volid ==0\n";
-					$crashed =1;
-					next MAINWHILE;
-				}
-					
-				
-			}
-			
-			# wait for instance to be "ACTIVE"
-			my $instance_show = nova2hash($nova." show ".$instance_id, 1);
-			if (defined $instance_show->{"ERROR"}) {
-				print STDERR "error: undefined instance_show\n";
-				$crashed = 1;
-				next MAINWHILE;
-			}
-			$status = getHashValue($instance_show, "status", "Value");
-			
-				
-			while ($status ne "ACTIVE") {
-				my $wait_sec = 0;
-				if ($wait_sec > 60) {
-					print STDERR "error: ACTIVE wait > 60\n";
-					$crashed = 1;
-					next MAINWHILE;
-				}
-				
-				if ($status eq "ERROR") {
-					print STDERR "error: status = ERROR\n";
-					$crashed = 1;
-					next MAINWHILE;
-				}
-				
-				sleep 5;
-				$wait_sec += 5;
-				$instance_show = nova2hash($nova." show ".$instance_id, 1);
-				if (defined $instance_show->{"ERROR"}) {
-					print STDERR "error: undefined instanceshow\n";
-					$crashed = 1;
-					next MAINWHILE;
-				}
-				$status = getHashValue($instance_show, "status", "Value");
-			}
-			
-				
-				
-			# get local IP of instance
-			my $instance_ip_line = getHashValue($instance_show, "service network", "Value");
-			($instance_ip) = $instance_ip_line =~ /10\.0\.(\d+\.\d+)/;
-			unless (defined $instance_ip) {
-				print STDERR "error: undefined instanceip \n";
-				$crashed = 1;
-				next MAINWHILE;
-			}
-			$instance_ip = "10.0.".$instance_ip;
-			
-			
-			my $known_hosts = $ENV{"HOME"}."/.ssh/known_hosts";
-			my $lock = new File::Flock $known_hosts;
-			systemp('ssh-keygen', "-f $known_hosts", "-R ".$instance_ip);
-			$lock->unlock();
-			
-			my $remote = "$vm_user\@$instance_ip";
-			
-			
-			# wait for real ssh connection
-			SubmitVM::connection_wait($ssh, $remote, 400);
+		}
+		print "requested instances: ".$count.", BUILD: ".$build.", ACTIVE: ".$active."\n";
+		if ($active != $count) {
+			print "wait few seconds..\n";
 			sleep 5;
+		}
+		
+		if (-e "STOPBULKJOBS") {
+			print STDERR "error: At least one job requested an emergency stop. See previous error message for details.\n";
+			system("rm -f STOPBULKJOBS");
 			
-			#my $date = `date \"+\%Y\%m\%d \%T\"`;
-			#chop($date);
-			#SubmitVM::remote_system($ssh, $remote, "sudo date --set=\\\"".$date."\\\"") || print STDERR "error setting date/time\n";
-			SubmitVM::setDate($ssh, $remote);
 			
-			my $device = "/dev/vdc";
-			my $volumeattach;
-			my $data_dir_exists = SubmitVM::remote_system($ssh, $remote, "test -d /home/ubuntu/data/");
-			if ($disksize > 0) {
-				
-				if ($data_dir_exists == 1) {
-					print STDERR "error: you requested to attach disk, but /home/ubuntu/data/ already exists!\n";
-					# as long as data/ is empty simply do rmdir and continue !?
-					
+			exit(1);
+		}
+		
+	}
+	
+	print "all jobs should have finished by now.\n";
+	
+	
+	print "createVMs: to be sure, wait for the last children to finish...\n";
+	$manager->wait_all_children;
+	
+
+	
+	if (defined $arg_hash->{"saveIpToFile"}) {
+		
+		saveIpToFile($groupname, $sshkey, \@children_iplist);
+	}
+	
+	return \@children_iplist;
+}
+
+sub createSingleServer {
+	
+	# no tests here anymore
+	my $arg_hash = shift(@_);
+	my $child_number = shift(@_);
+	my $ssh = shift(@_);
+	my $scp = shift(@_);
+	my @nameslist = @{shift(@_)};
+	
+	my $groupname = $arg_hash->{"groupname"};
+	my $image_id = $arg_hash->{"image"};
+	my $flavor_id = $arg_hash->{"flavor_id"};
+	my $key_name = $arg_hash->{"key_name"};
+	my $count = $arg_hash->{"create"};
+	my $disksize = $arg_hash->{"disksize"} || 0;
+	my $wantip = $arg_hash->{"wantip"} || 0;
+	
+	
+	
+	my $return_value;
+	my $return_data;
+	
+	#major components (delete if fails)
+	my $instance_id;
+	my $volume_id;
+	my $newip;
+	
+	my $instance_ip;
+	
+	my $crashed = 0;
+	my $crashed_final = 0;
+	
+	my $try_counter = 0;
+	MAINWHILE: while (1) {
+		$try_counter++;
+		
+		# delete stuff from previous crash
+		if ($crashed == 1 || $crashed_final==1) {
+			print STDERR "delete previous instance since something went wrong...\n";
+			if (defined $instance_id) {
+				systemp($nova." delete ".$instance_id);
+			}
+			
+			
+			
+			if (defined $volume_id) {
+				if ($volume_id ==0 ) {
+					print STDERR "error: volume_id==0 should not happen\n";
 					exit(1);
 				}
 				
-				#  attach volume to instance
-				if (volumeAttachWait($instance_id, $volume_id, $device) == 0 ){
-					print STDERR "error: vol-attach-wait\n";
-					$crashed = 1;
+				my $volshow = nova2hash($nova." volume-show ".$volume_id, 0);
+				while ($volshow->{'status'}{'Value'} ne 'available' ) {
+					sleep 5;
+					$volshow = nova2hash($nova." volume-show ".$volume_id, 0);
+				}
+				systemp($nova." volume-delete ".$volume_id);
+			}
+			
+			if (defined $newip) {
+				systemp($nova." floating-ip-delete ".$newip);
+			}
+			$instance_id=undef;
+			$volume_id=undef;
+			$newip=undef;
+			$crashed = 0;
+			sleep 20;
+		}
+		
+		if ($try_counter > 3 ) {
+			print STDERR "instance creation failed three times. Stop.\n";
+			system("touch STOPBULKJOBS");
+			return undef;
+		}
+		
+		if ( $crashed_final==1) {
+			print STDERR "instance creation stopped with critical error.\n";
+			system("touch STOPBULKJOBS");
+			return undef;
+		}
+		
+		# create name for new instance
+		my $instname=$groupname;
+		
+		unless (defined ($arg_hash->{"onlygroupname"}) ) {
+			$instname .= "_";
+			if (defined $nameslist[$child_number]) {
+				$instname .= $nameslist[$child_number];
+			} else {
+				$instname .= $child_number;
+			}
+		}
+		
+		#start instance
+		#my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
+		
+		my $owner = $arg_hash->{"owner"} || $os_username;
+		
+		my $create_parameter_hash = {	'tenant_id' => $os_tenant_id,
+										'imageRef' => $image_id,
+										'flavorRef' => $flavor_id,
+										'key_name' => $key_name,
+										'name' => $instname,
+										'metadata' => {'owner' => $owner}
+										#'max_count' => 1,
+										#'min_count' => 1
+		};
+		
+		
+		if (defined $arg_hash->{"user-data"}) {
+			$create_parameter_hash->{'user-data'} = $arg_hash->{"user-data"};
+		}
+		
+		
+		# create server (do not wait here)
+		my $create_servers = openstack_api('POST', 'nova', '/servers', { 'server' => $create_parameter_hash});
+		
+		unless (defined $create_servers) {
+			print STDERR "error: server creation failed\n";
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+			
+		$instance_id = $create_servers->{'server'}->{'id'};
+		unless (defined $instance_id) {
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+		
+		#create volume
+		if ($disksize > 0) {
+			
+			$volume_id = volumeCreateWait($instname, $disksize, $arg_hash->{"owner"});
+			if ($volume_id == 0 ) {
+				print STDERR "error: volume_id==0\n";
+				$volume_id=undef;
+				$crashed =1;
+				next MAINWHILE;
+			}
+			
+			
+		}
+		
+		
+		
+		# now wait for the new server
+		my $new_server = openstack_api('GET', 'nova', '/servers/'.$instance_id);
+		my $wait_sec = 0;
+		while ($new_server->{'server'}->{'status'} ne "ACTIVE") {
+			
+			if ($wait_sec > 60) {
+				print STDERR "error: ACTIVE wait > 60\n";
+				$crashed = 1;
+				next MAINWHILE;
+			}
+
+			
+			if ($new_server->{'server'}->{'status'} eq "ERROR") {
+				print Dumper($new_server);
+				print STDERR "error: new instance in status ERROR!\n";
+				if ($new_server->{'server'}->{'OS-EXT-STS:task_state'} eq 'scheduling') {
+					print STDERR "error: new instance is in ERROR state while scheduling\n";
+					$crashed_final = 1;
 					next MAINWHILE;
 				}
 				
 				
+				if (exists $new_server->{'server'}->{'fault'}) {
+					foreach my $hashkey (keys(%{$new_server->{'server'}->{'fault'}})) {
+						print STDERR "ERRORMESSAGE: $hashkey : ".$new_server->{'server'}->{'fault'}->{$hashkey}."\n";
+					}
+				}
+				$crashed = 1;
+				next MAINWHILE;
+			}
 			
+			sleep(5);
+			$wait_sec += 5;
+			$new_server = openstack_api('GET', 'nova', '/servers/'.$instance_id);
+		}
+		# new server is ACTIVE now.
+		
+		
+		
+		# get local IP of instance
+		my $server_address_private = $new_server->{'server'}->{'addresses'}->{'private'};
+		
+		# not clear to me if 'private' or 'service'
+		unless(defined $server_address_private) {
+			$server_address_private = $new_server->{'server'}->{'addresses'}->{'service'};
+		}
+		
+		unless(defined $server_address_private) {
+			print Dumper($new_server);
+			print STDERR "error: server_address_private and server_address_service not defined \n";
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+		
+		my @private_addresses = @{$server_address_private};
+		
+		if (@private_addresses == 0) {
+			print STDERR "error: private_addresses == 0 \n";
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+		
+		my $instance_ip_hash = $private_addresses[0];
+		
+		if ($instance_ip_hash->{'version'} ne '4') {
+			print STDERR "error: instance_ip_hash->\{version\} ne 4\n";
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+		
+		my $instance_ip = $instance_ip_hash->{'addr'};
+		
+		unless ($instance_ip =~ /^10\.0\.\d+\.\d+$/) {
+			print STDERR "error: instance_ip format wrong \"$instance_ip\" \n";
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+		
+		
+		# remove IP from .ssh/known_hosts file
+		my $known_hosts = $ENV{"HOME"}."/.ssh/known_hosts";
+		
+		if (-e $known_hosts) {
+			
+			my $lock = new File::Flock $known_hosts;
+			systemp('ssh-keygen'." -f \"$known_hosts\"". " -R ".$instance_ip);
+			#systemp('ssh-keygen', "-f \"$known_hosts\"", "-R ".$instance_ip); # I do not understand why this does not work.
+			
+			$lock->unlock();
+		} 
+		
+		
+		my $remote = "$vm_user\@$instance_ip";
+		
+		# wait for real ssh connection
+		SubmitVM::connection_wait($ssh, $remote, 400);
+		sleep 5;
+		
+		#my $date = `date \"+\%Y\%m\%d \%T\"`;
+		#chop($date);
+		#SubmitVM::remote_system($ssh, $remote, "sudo date --set=\\\"".$date."\\\"") || print STDERR "error setting date/time\n";
+		SubmitVM::setDate($ssh, $remote);
+		
+		my $device = "/dev/vdc";
+		my $volumeattach;
+		
+		my $data_dir_exists = SubmitVM::remote_system($ssh, $remote, "test -d /home/$vm_user/data"); # 0 exists , 1 does not exists !
+		# warning test command does not allow slash at end of directory!!!!
+		print "data_dir_exists : $data_dir_exists\n";
+				
+		
+		
+		if ($disksize > 0) {
+			
+	
+			
+			my $data_dir_is_symlink = SubmitVM::remote_system($ssh, $remote, "test -L /home/$vm_user/data");
+			print "data_dir_is_symlink: $data_dir_is_symlink\n";
+					
+			if ($data_dir_exists && ! $data_dir_is_symlink ) {
+				print STDERR "error: you requested to attach disk, but /home/$vm_user/data/ already exists and is not symlink!\n";
+				# as long as data/ is empty simply do rmdir and continue !?
+				
+				exit(1);
+			}
+			
+			if ($data_dir_exists && $data_dir_is_symlink) {
+				SubmitVM::remote_system($ssh, $remote, "rm -f /home/$vm_user/data");
+			}
+			
+			$data_dir_exists = SubmitVM::remote_system($ssh, $remote, "test -d /home/$vm_user/data");
+			
+			if ($data_dir_exists) {
+				print STDERR "error: B you requested to attach disk, but /home/$vm_user/data/ already exists!\n";
+				# as long as data/ is empty simply do rmdir and continue !?
+				exit(1);
+			}
+
+			
+			
+			#  attach volume to instance
+			if (volumeAttachWait($instance_id, $volume_id, $device) == 0 ){
+				print STDERR "error: vol-attach-wait\n";
+				$crashed = 1;
+				next MAINWHILE;
+			}
+			
+			
+			# create partition and mount volume
+			my $partmount = SubmitVM::remote_perl_function(	$ssh , $scp, $remote,
+			sub {
+				my $data_hash_ref = shift(@_);
+				my $remoteDataDir = $data_hash_ref->{"remoteDataDir"};
+				my $disksize = $data_hash_ref->{"disksize"};
+				my $vm_user = $data_hash_ref->{"vm_user"};
+				
+				#print "remoteDataDir: $remoteDataDir\n";
+				
+				my $systemp = sub {
+					print join(' ', @_)."\n";
+					return system(@_);
+				};
+				
 				# create partion, make filesystem, mount etc. and check afterwards
 				my $ret;
-				
+				my $crashed = 0;
 				my $mytime=0;
+				my $device = undef;
 				while (1) {
-					$device = undef;
-					my $partitions = SubmitVM::execute_remote_command_backtick($ssh, $remote, "cat /proc/partitions");
 					
-					my @partitiion_array = split('\n', $partitions);
+					my $partitions = `cat /proc/partitions`;
 					
-					foreach my $line (@partitiion_array) {
+					my @partition_array = split('\n', $partitions);
+					
+					foreach my $line (@partition_array) {
 						my ($major,$minor,$blocks, $devicename) = $line =~ /(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/;
 						
+						
+						
 						if (defined $major) {
+							unless (defined $devicename) {
+								print STDERR "devicename not defined\n";
+								print STDERR "$line\n";
+								return "error";
+							}
+							
 							print "$devicename $blocks $disksize ".($disksize * 1000000)."\n";
 							if ($blocks > ($disksize * 1000000)) {
 								$device = "/dev/".$devicename;
@@ -998,151 +1650,109 @@ sub createNew {
 					$mytime+=5;
 					sleep 5;
 				}
-				if ($crashed == 1) {
-					next;
-				}
-				
-				SubmitVM::remote_system($ssh, $remote, "echo -e \\\"n\\np\\n1\\n\\n\\nt\\n83\\nw\\\" | sudo fdisk $device") or do {print STDERR "error: fdisk\n"; $crashed = 1; next;};
-				SubmitVM::remote_system($ssh, $remote, "sudo mkfs.ext3 $device") or do {print STDERR "error: mkfs\n";$crashed = 1; next;};
-				SubmitVM::remote_system($ssh, $remote, "sudo mkdir /mnt2/") or do {print STDERR "error: mkdir mnt2\n";$crashed = 1; next;};
-				SubmitVM::remote_system($ssh, $remote, "sudo mount $device /mnt2/") or do {print STDERR "error: mount\n";$crashed = 1; next;};
-				SubmitVM::remote_system($ssh, $remote, "sudo chmod 777 /mnt2") or do {print STDERR "error: chmod \n";$crashed = 1; next;};
-				SubmitVM::remote_system($ssh, $remote, "ln -s /mnt2 /home/ubuntu/data") or do {print STDERR "error: ln\n";$crashed = 1; next;};
-				
-				sleep 2;
-				my ($mountlines) = SubmitVM::execute_remote_command_backtick($ssh, $remote, "df -h | grep $device | wc -l") =~ /(\d+)/;
-				unless (defined $mountlines) {
-					print STDERR "error: undefined mountlines\n";
-					$crashed = 1;
-					next MAINWHILE;
-				}
-				if ($mountlines != 1) {
-					print STDERR "error: disk not mounted: $ssh $remote\n";
-					$crashed = 1;
-					next MAINWHILE;
-				}
-			} else {
-				# create data directory
-				
-				if ($data_dir_exists != 1) {
-					SubmitVM::remote_system($ssh, $remote, "ln -s /mnt/ /home/ubuntu/data") or do {print STDERR "error: ln\n"; $crashed = 1; next;};
-				}
-				SubmitVM::remote_system($ssh, $remote, "sudo chmod 777 /home/ubuntu/data") or do {print STDERR "error: chmod\n"; $crashed = 1; next;};
-				
-			}
-			
-			
-			
-			if ($wantip == 1) {
-				
-				my $totaltime=0;
-				while (! defined $newip) {
-					$newip = getIP();
-					if (! defined $newip) {
-						if ($totaltime >= $timeout ) {
-							print STDERR "error: IP request timeout!\n";
-							$crashed = 1;
-							last;
-						}
-						print "IP request failed, try again in a few seconds...\n";
-						$totaltime += 5;
-						sleep 5;
+								#"/dev/vdc\t/mnt2\tauto\tdefaults,nobootwait,comment=cloudconfig\t0\t2"
+				while (1) {
+					
+					if ($crashed == 1) {
+						last;
 					}
+					#prepare volume
+					$systemp->("echo -e \"o\\nn\\np\\n1\\n\\n\\nt\\n83\\nw\" | sudo fdisk $device")==0 or do {print STDERR "error: fdisk\n"; $crashed = 1;};
+					$systemp->("sudo mkfs.ext3 $device")==0 or do {print STDERR "error: mkfs\n";$crashed = 1; next;};
+					
+					#mount volume
+					$systemp->("sudo mkdir /mnt2/")==0 or do {print STDERR "error: mkdir mnt2\n";$crashed = 1; next;};
+					my $count_fstab  = `grep -c \"\^$device\" /etc/fstab`;
+					
+					if ($count_fstab == 0) {
+						$systemp->("sudo su -c \"echo \'/dev/vdc\t/mnt2\tauto\tdefaults,nobootwait,comment=cloudconfig\t0\t2\' >> /etc/fstab\"");
+					}
+					#$systemp->("sudo mount $device /mnt2/")==0 or do {print STDERR "error: mount\n";$crashed = 1; next;};
+					system("sudo mount -a")==0 or do {print STDERR "error: mount\n";$crashed = 1; next;};
+					$systemp->("sudo chmod 777 /mnt2")==0 or do {print STDERR "error: chmod \n";$crashed = 1; next;};
+					$systemp->("ln -s /mnt2 /home/$vm_user/data")==0 or do {print STDERR "error: ln\n";$crashed = 1; next;};
+					
+					sleep 2;
+					my ($mountlines) = `df -h | grep $device | wc -l` =~ /(\d+)/;
+					unless (defined $mountlines) {
+						print STDERR "error: undefined mountlines\n";
+						$crashed = 1;
+						next;
+					}
+					if ($mountlines != 1) {
+						print STDERR "error: disk not mounted: $ssh $remote\n";
+						$crashed = 1;
+						next;
+					}
+					
+					last;
 				}
-				if ($crashed ==1) {
-					next;
+				if ($crashed == 1 ) {
+					return "error";
 				}
-				print "newip: $newip\n";
-				if ($count > 1) {
-					systemp($nova."  add-floating-ip ".$groupname.$i." $newip");
-				} else {
-					systemp($nova."  add-floating-ip ".$groupname." $newip");
-				}
+			}
+			,
+			{	"remoteDataDir" => '/home/$vm_user/',
+				"disksize" => $disksize,
+				"vm_user" => $vm_user}
+			);
+			
+			if ($partmount =~ /error/) {
+				print "partmount:\n \"$partmount\" \n partmount end\n";
+				print STDERR "error: partmount reported error\n";
+				$crashed = 1;
+				next;
 			}
 			
 			
-			$return_value = 0;
-			$return_data = $instance_ip;
-			last;
-		} # end while
+			
+		} else {
+			# create data directory
+			
+			unless ($data_dir_exists) {
+				SubmitVM::remote_system($ssh, $remote, "ln -s /mnt/ /home/$vm_user/data") or do {print STDERR "error: ln\n"; $crashed = 1; next;};
+			}
+			SubmitVM::remote_system($ssh, $remote, "sudo chmod 777 /home/$vm_user/data") or do {print STDERR "error: chmod\n"; $crashed = 1; next;};
+			
+		}
 		
-		$manager->finish($return_value, \$return_data);
-		########## CHILD END ############
-	}
-	
-
-	
-	
-	
-	my $active = 0;
-	my $build = 0;
-	while ($active < $count) {
-		$nova_list = nova2hash($nova." list", 0);
-		$active = 0;
-		$build = 0;
-		foreach my $id (keys %$nova_list) {
-			if ($nova_list->{$id}{Name} =~ /^$groupname/ ) {
-				#print "got: ".$nova_list->{$id}{Status}."\n";
-				if ($nova_list->{$id}{Status} eq "ACTIVE") {
-					$active++;
-				} elsif ($nova_list->{$id}{Status} eq "BUILD") {
-					$build++;
+		
+		
+		if ($wantip == 1) {
+			
+			my $totaltime=0;
+			while (! defined $newip) {
+				$newip = getIP();
+				if (! defined $newip) {
+					if ($totaltime >= $timeout ) {
+						print STDERR "error: IP request timeout!\n";
+						$crashed = 1;
+						last;
+					}
+					print "IP request failed, try again in a few seconds...\n";
+					$totaltime += 5;
+					sleep 5;
 				}
 			}
-		}
-		print "requested instances: ".$count.", BUILD: ".$build.", ACTIVE: ".$active."\n";
-		if ($active != $count) {
-			print "wait few seconds..\n";
-			sleep 5;
-		}
-		
-		if (-e "STOPBULKJOBS") {
-			print STDERR "error: At least one job requested an emergency stop. See previous error message for details.\n";
-			system("rm -f STOPBULKJOBS");
-			
-			
-			exit(1);
+			if ($crashed ==1) {
+				next;
+			}
+			print "newip: $newip\n";
+			if ($count > 1) {
+				systemp($nova."  add-floating-ip ".$groupname.$child_number." $newip");
+			} else {
+				systemp($nova."  add-floating-ip ".$groupname." $newip");
+			}
 		}
 		
-	}
+		
+		$return_value = 0;
+		$return_data = $instance_ip;
+		last;
+	} # end while
 	
-	print "all jobs should have finished by now.\n";
-	
-	
-	print "createVMs: to be sure, wait for the last children to finish...\n";
-	$manager->wait_all_children;
-	
-	# get list of IPs
-	
-	
-	
-	
-#	my @list_of_ips=();
-#	
-#	foreach my $id (keys %$nova_list) {
-#		if ($nova_list->{$id}{Name} =~ /^$groupname/ ) {
-#			#print "got: ".$nova_list->{$id}{Status}."\n";
-#			
-#			my $networks = $nova_list->{$id}{Networks};
-#			
-#			my ($ip) = $networks =~ /(10\.0\.\d+\.\d+)/;
-#			
-#			unless (defined $ip) {
-#				print STDERR "error: local IP for $id not found\n";
-#				print STDERR "nova_list->{id}{Name}: ".$nova_list->{$id}{Name}."\n";
-#			}
-#			push(@list_of_ips, $ip);
-#		}
-#	}
-	
-	if (defined $arg_hash->{"saveIpToFile"}) {
-		#saveIpToFile($groupname, $sshkey, \@list_of_ips);
-		saveIpToFile($groupname, $sshkey, \@children_iplist);
-	}
-	#return \@list_of_ips;
-	return \@children_iplist;
+	return ($return_value, \$return_data)
 }
-
 
 sub saveGroupInIpFile {
 	my $arg_hash = shift(@_);
@@ -1187,10 +1797,12 @@ sub saveIpToFile {
 	
 }
 
-#verify that all IPs have correct groupname, use groupname=force to diable check
+#verify that all IPs have correct groupname, use option nogroupcheck to diable check
 sub deletebulk {
 	
 	my $arg_hash = shift(@_);
+	
+	my $owner = $arg_hash->{"owner"} || $os_username;
 	
 	unless(defined $arg_hash->{"iplist"}) {
 		print STDERR "error: (deletebulk) iplist not defined\n";
@@ -1210,10 +1822,14 @@ sub deletebulk {
 		exit(1);
 	}
 
+	print "groupname: $groupname\n";
 	
-	my $volumelist = nova2hash($nova." volume-list", 1);
-	my $nova_list = nova2hash($nova." list", 1);
+	
+	
+	
+	
 	my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", 1);
+	my $volumelist = nova2hash($nova." volume-list", 1);
 	
 	my $instanceId_to_volumeId;
 	foreach my $vol_id (keys %$volumelist) {
@@ -1227,26 +1843,75 @@ sub deletebulk {
 		
 	}
 	
-	my %ip_to_name_hash;
-	foreach my $id (keys %$nova_list) {
-		
-		if ($nova_list->{$id}{Status} eq "ERROR") {
+	
+	
+	my $servers_detail = openstack_api('GET', 'nova', '/servers/detail');
+	if (defined $servers_detail->{'servers'}) {
+		$servers_detail = $servers_detail->{'servers'};
+	} else {
+		die;
+	}
+	
+	my $ip_to_server_hash;
+	my $id_to_server_hash;
+	
+	foreach my $server (@{$servers_detail}) {
+		my $id = $server->{'id'};
+		unless (defined $id) {
+			print STDERR "warning: id not defined for server\n";
+			next;
+		}
+	
+		if (lc($server->{'status'}) eq "error") {
+			print STDERR "warning: server is in error status, name=".$server->{'name'}." id=$id\n";
 			next;
 		}
 		
-		my $instancename = $nova_list->{$id}{Name};
+		my $instancename = $server->{'name'};
 		
-		my ($ip) = $nova_list->{$id}{Networks} =~ /10\.0\.(\d+\.\d+)/;
-		#unless (defined $ip) {
-		#	print STDERR "error: ip not defined\n";
-		#	print STDERR $nova_list->{$id}{Networks}."\n";
-		#	print STDERR "instancename: ".$instancename."\n";
-		#	exit(1);
-		#}
+		
+		# get local IP of instance
+		my $server_address_private = $server->{'addresses'}->{'private'};
+		
+		# not clear to me if 'private' or 'service'
+		unless(defined $server_address_private) {
+			$server_address_private = $server->{'addresses'}->{'service'};
+		}
+		
+		
+		unless(defined $server_address_private) {
+			print STDERR "warning: server_address_private not defined, name=".$server->{'name'}."\n";
+			next;
+		}
+		
+		my @private_addresses = @{$server_address_private};
+		
+		if (@private_addresses == 0) {
+			print STDERR "warning: private_addresses == 0 \n";
+			next;
+		}
+		
+		my $instance_ip_hash = $private_addresses[0];
+		
+		if ($instance_ip_hash->{'version'} ne '4') {
+			print STDERR "warning: instance_ip_hash->\{version\} ne 4\n";
+			next;
+		}
+		
+		my $ip = $instance_ip_hash->{'addr'};
+		
+		unless ($ip =~ /^10\.0\.\d+\.\d+$/) {
+			print STDERR "warning: ip format not ok \"$ip\"\n";
+			next;
+		}
+		
 		if (defined $ip) {
-			$ip_to_name_hash{"10.0.".$ip}{"name"} = $instancename;
-			$ip_to_name_hash{"10.0.".$ip}{"id"} = $id;
-		} 
+			$ip_to_server_hash->{$ip} = $server;
+			$id_to_server_hash->{$id} = $server;
+		} else {
+			print STDERR "warning: ip not defined\n";
+			next;
+		}
 	}
 	
 	my $delcount =0;
@@ -1257,21 +1922,37 @@ sub deletebulk {
 	my @id_list=();
 	foreach my $ip (@ip_array) {
 		
-		unless (defined $ip_to_name_hash{"10.0.".$ip}) {
+		unless (defined $ip_to_server_hash->{$ip}) {
 			print STDERR "error: ip $ip is unknown\n";
 			exit(1);
 		}
 		
-		if ($groupname ne "force") {
-			if (substr($ip_to_name_hash{$ip}{"name"}, 0, length($groupname)) ne $groupname) {
+		
+		unless(defined $arg_hash->{"nogroupcheck"}) {	
+			if (substr($ip_to_server_hash->{$ip}->{'name'}, 0, length($groupname)) ne $groupname) {
 				print STDERR "error: groupname is not a prefix of instance name:\n";
 				print STDERR "groupname: " .$groupname."\n";
-				print STDERR "instance name: " .$ip_to_name_hash{$ip}{"name"}."\n";
+				print STDERR "instance name: " .$ip_to_server_hash->{$ip}->{'name'}."\n";
 				print STDERR "instance ip: " .$ip."\n";
 				exit(1);
 			}
 		}
-		push(@id_list, $ip_to_name_hash{$ip}{"id"});
+		
+		unless (defined $arg_hash->{"noownercheck"} ) {
+			my $vm_owner = $ip_to_server_hash->{$ip}->{'metadata'}->{'owner'};
+			unless (defined $vm_owner) {
+				print STDERR "error: ".$ip_to_server_hash->{$ip}->{'name'}." has no owner\n";
+				print STDERR "use option --noownercheck only if you know what you do.\n";
+				exit(1);
+			}
+			if ($vm_owner ne $owner) {
+				print STDERR "error: ".$ip_to_server_hash->{$ip}->{'name'}." , you do not seem to be owner of this vm. owner: $owner vm_owner: $vm_owner\n";
+				print STDERR "use option --noownercheck only if you know what you do.\n";
+				exit(1);
+			}
+		}
+		
+		push(@id_list, $ip_to_server_hash->{$ip}->{'id'});
 	}
 	
 	if (@id_list != @ip_array) {
@@ -1280,8 +1961,9 @@ sub deletebulk {
 	}
 	
 	foreach my $id (@id_list) {
-	#foreach my $id (keys %$nova_list) {
-		my $instancename = $nova_list->{$id}{Name};
+	
+		
+		my $instancename = $id_to_server_hash->{$id}->{'name'};
 		
 		if ($instancename =~ /^$groupname/ ) {
 			

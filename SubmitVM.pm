@@ -81,7 +81,7 @@ sub remote_perl_function {
 	
 	nstore ({"CODE" => $func_ref, "DATA" => $data_ref}, $tempfilename);
 	
-	my $tempbase = "data/tempfile.dat";
+	my $tempbase = "tempfile.dat";
 	myscp($scp, $tempfilename, $remote.":".$tempbase);
 	
 	#my $ret = execute_remote_command_backtick($ssh, $remote, "perl -e \'print \\\"hello world \\\"\'");
@@ -119,6 +119,7 @@ sub remote_system { # was execute_remote_command_simple
 	
 	print $command."\n";
 	my $ret = system($command); #returns remote exit code, only 255 if something is wrong with ssh
+	print "ret: \"$ret\"\n";
 	if ($ret == 0 ) {
 		return 1;  #good
 	}
@@ -258,7 +259,7 @@ sub connection_wait {
 	my $time = 0;
 	while ($con_test == 0) {
 		
-		print "$remote no ssh connection yet ... $time \n";
+		print "$remote waiting for ssh connection ... $time \n";
 		
 		if ($time > $timeout) {
 			print STDERR "error: connection test for $remote failed finally...\n";
