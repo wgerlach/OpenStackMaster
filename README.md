@@ -14,7 +14,7 @@ This modules containes functions to start multiple instances and attach volumes,
 
 SubmitVM.pm
 -----------
-This module contains functions to communicate with the VMs via ssh and scp. Most important functionality is the execution of commands on the remote VMs. Long running jobs can be executed within a screen environment, which allows to detach from the VM and periodically check if the job is still running.
+This module contains functions to communicate with the VMs via ssh and scp within a threaded environment. For each VM there is one thread that is responsible for the communication. Most important functionality is the execution of commands on the remote VMs. Long running jobs can be executed within a screen environment, which allows to detach from the VM and periodically check if the job is still running.
 A nice and fancy feature is the execution of small perl functions directly on the remote VM, without the need to create a perl script and scp'ing to the VM.
 
 Configuration file
