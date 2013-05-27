@@ -31,8 +31,12 @@ Options provided at command line or in the IpFile have higher priority of course
 
 Usage Example
 -------------
+This example is based on vmAWE.pl which is now maintained by Wei and can be found here:
+https://github.com/wtangiit/vmScriptAWE
 
-example with vmAWE.pl 
+The first four option groups are generic, they are inherited from the ManageBulkInstances.pm module. Only the last two option groups (AWE actions and AWE options) are AWE-specifc options are defined in the vmAWE.pl script.
+
+options of vmAWE.pl: 
 
     Nova actions:
      --create=i            create i new instances from snapshot/image
@@ -83,4 +87,4 @@ example with vmAWE.pl
  
      example: ./vmAWE.pl --create 2 --sshkey ~/.ssh/x.pem --key_name x --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
 
-Note that all options except AWE actions and AWE options are generic, that means they are inherited from the ManageBulkInstances module. Only the AWE-specifc options are defined in the vmAWE.pl script.
+
