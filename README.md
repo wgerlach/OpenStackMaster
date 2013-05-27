@@ -16,9 +16,15 @@ SubmitVM.pm
 This module contains functions to communicate with the VMs via ssh and scp within a threaded environment. For each VM there is one thread that is responsible for the communication. Most important functionality is the execution of commands on the remote VMs. Long running jobs can be executed within a screen environment, which allows to detach from the VM and periodically check if the job is still running.
 A nice and fancy feature is the execution of small perl functions directly on the remote VM, without the need to create a perl script and scp'ing to the VM.
 
-Configuration file
-------------------
-When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
+Configuration
+-------------
+Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
+OS_USERNAME<br>
+OS_PASSWORD<br>
+OS_AUTH_URL<br>
+OS_TENANT_NAME or OS_TENANT_ID<br>
+<br>
+When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are as lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
 <br>
 ~/.bulkvm<br>
 sshkey=~/.ssh/x.pem<br>
