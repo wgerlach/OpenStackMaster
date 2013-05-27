@@ -5,12 +5,11 @@ Perl modules for the instantiation of, configuration of and communication with m
 
 Requirements
 ------------
-Nova-Tools (http://docs.openstack.org/cli/quick-start/content/install_openstack_nova_cli.html)<br>
-Perl modules: Parallel::ForkManager 0.7.6, File::Flock
+Perl modules: Parallel::ForkManager 0.7.6, File::Flock, JSON
 
 ManageBulkInstances.pm 
 ----------------------
-This modules containes functions to start multiple instances and attach volumes, if needed. At the moment this script uses the nova tools, in the future I will switch to using the JSON-based API.
+This modules containes functions to start multiple instances and attach volumes, if needed. It uses the OpenStack JSON-based API.
 
 SubmitVM.pm
 -----------
@@ -54,7 +53,9 @@ example with vmAWE.pl
      --groupname=s         optional, Openstack instance prefix name
      --nogroupcheck        optional, disables check for unique groupname
      --onlygroupname       optional, instance names all equal groupname
-     --disksize=i          optional, in GB, default 300GB
+     --owner=s             optional, metadata information on VM, default os_username
+     --noownercheck        optional, disables owner check
+     --disksize=i          optional, in GB, creates, attaches and mounts volume
      --wantip              optional, external IP, only with count=1
      --user-data=s         optional, pass user data file to new instances
      --saveIpToFile        optional, saves list of IPs in file (recommended)
