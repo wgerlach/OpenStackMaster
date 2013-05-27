@@ -10,7 +10,7 @@ eval "use Parallel::ForkManager 0.7.6; 1"
 	or die "module required: sudo apt-get install build-essential ; perl -MCPAN -e \'install Parallel::ForkManager\'";
 
 eval "use File::Flock; 1"
-	or die "module required: sudo apt-get install libfile-flock-perl OR perl -MCPAN -e \'install File::Flock\'";
+	or die "module required: sudo apt-get install libfile-flock-perl \n OR perl -MCPAN -e \'install File::Flock\'";
 
 #use Parallel::ForkManager 0.7.6;
 #new version: sudo apt-get install build-essential ; perl -MCPAN -e 'install Parallel::ForkManager'
@@ -19,9 +19,12 @@ eval "use File::Flock; 1"
 use lib $ENV{"HOME"}."/projects/libraries/"; # path to SubmitVM module
 use SubmitVM;
 use Getopt::Long;
+use List::Util qw(first);
 
 use LWP::UserAgent;
-use JSON;
+
+eval "use JSON; 1"
+	or die "module required: cpan install JSON";
 use Data::Dumper;
 
 # purpose of this module: wrapper for nova tools
@@ -37,6 +40,7 @@ use Data::Dumper;
 #our $sshkey = "~/.ssh/dm_new_magellan.pem";
 
 
+my $os_tenant_name = $ENV{'OS_TENANT_NAME'}; # tenant name or tenant ID needs to defined.	
 my $os_tenant_id = $ENV{'OS_TENANT_ID'};
 my $os_username = $ENV{'OS_USERNAME'};
 my $os_password = $ENV{'OS_PASSWORD'};
@@ -54,6 +58,7 @@ my @hobbitlist = ("Frodo","Samwise","Meriadoc","Peregrin","Gandalf","Aragorn","L
 my $default_namelist = \@hobbitlist;
 
 
+#deprecated
 our $nova = "nova --insecure --no-cache ";
 
 
@@ -106,6 +111,84 @@ our @options_all = ($options_basicactions, $options_vmactions, $options_create_o
 
 ##############################
 # subroutines
+
+
+
+#example my $value = get_nested_hash_value($hash, 'name', '1', [key,value] or {($_->{$key}||"") eq $val});
+# returns value, if last step is [key,value], it returns array
+sub get_nested_hash_value {
+	my $hash_ref = shift(@_);
+	
+	my @route = @_;
+	
+	my $h = $hash_ref;
+	
+	#foreach my $value (@route) {
+	for ( my $i = 0 ; $i < @route ; ++$i) {
+		my $value = $route[$i];
+		#print "operation $i \n";
+		if (ref($h) eq "HASH") {
+			#print "operation_hash\n";
+			$h = $h->{$value};
+			unless (defined $h) {
+				return undef;
+			}
+		} elsif (ref($h) eq "ARRAY") {
+			#print "operation_array\n";
+			if (ref($value)) {
+				# value is reference to tuple
+				
+				my @matches;
+				if (ref($value) eq "ARRAY") {
+					my ($key, $val) = @{$value};
+					#print "operation_array type array\n";
+					@matches = grep( ($_->{$key}||"") eq $val , @{$h});
+				} elsif (ref($value) eq "CODE") {
+					#print "operation_array type code\n";
+					@matches = grep( $value , @{$h});
+				} else {
+					print STDERR "ref: ".ref($value)."\n";
+					die;
+				}
+					
+					
+					
+				if ($i == @route-1) {
+					return @matches;
+				} else {
+					if (@matches == 0) {
+						print STDERR "error: no matching array element with (i=$i)\n";
+						return undef;
+					} elsif (@matches == 1) {
+						$h = shift(@matches);
+					} else {
+						print Dumper($hash_ref);
+						print STDERR "error: array element is not unique (i=$i)\n";
+						print STDERR "count: ".@matches."\n";
+						
+						return undef;
+					}
+				}
+
+				
+			} else {
+				# value (scalar) is a position in array
+				$h = @{$h}[$value];
+			}
+			
+			unless (defined $h) {
+				return undef;
+			}
+			
+		} else {
+			die;
+		}
+		
+	}
+	
+	return $h;
+	
+}
 
 
 sub runActions { # disable action by overwriting subroutine reference with "undef"
@@ -255,6 +338,7 @@ sub try_load {
 	}
 }
 
+#deprecated
 sub nova2hash{
 	my $command = shift(@_);
 	my $printtable = shift(@_);
@@ -332,7 +416,6 @@ sub getIP {
 	my $newip = undef;
 	
 	# try to find available IP
-	#my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", 0);
 	my $floating_ips = openstack_api('GET', 'nova', '/os-floating-ips');
 	
 	
@@ -347,17 +430,35 @@ sub getIP {
 		return $newip;
 	}
 	
-	# no IP found, trt to request a new one:
-	my $nova_newip_hash = nova2hash($nova." floating-ip-create");
+	# if no IP found, try to request a new one:
 	my $post_floating_ips= openstack_api('POST', 'nova', '/os-floating-ips', { 'pool' => 'nova'});
 	
-	unless (defined $post_floating_ips->{'floating_ip'}->{'ip'} ) {
-	#if (defined $nova_newip_hash->{"ERROR"}) {
-		return undef;
+	$newip = $post_floating_ips->{'floating_ip'}->{'ip'};
+	
+	unless (defined $newip) {
+		print STDERR "warning: IP allocation failed\n";
 	}
 	
-	($newip) = keys(%$nova_newip_hash);
 	return $newip;
+}
+
+sub delete_IP {
+	
+	my $ip = shift(@_);
+	
+	
+	my $floating_ips_hash = openstack_api('GET', 'nova', '/os-floating-ips');
+	
+	my @ip_ids = get_nested_hash_value($floating_ips_hash, ['ip',$ip]);
+	
+	if (@ip_ids == 0) {
+		print STDERR "warning: did not find ID for ip $ip\n";
+	} elsif (@ip_ids > 1) {
+		print STDERR "warning: found mulitple IDs for ip $ip\n";
+	} else {
+		my $ip_id = shift(@ip_ids);
+		my $ip_del = openstack_api('DELETE', 'nova', '/os-floating-ips/'.$ip_id);
+	}
 }
 
 sub systemp {
@@ -365,6 +466,7 @@ sub systemp {
 	return system(@_);
 }
 
+#depecated
 sub getHashValue {
 	my $hashref = shift(@_);
 	my $row = shift(@_);
@@ -379,7 +481,7 @@ sub getHashValue {
 	return $return_value;
 }
 
-
+#depecated
 sub waitNovaHashValue {
 	my $nova_command = shift(@_);
 	my $row = shift(@_);
@@ -418,8 +520,6 @@ sub volumeAttachWait {
 
 	
 	#  attach volume to instance
-	#my $volumeattach = nova2hash($nova." volume-attach $instance_id $volume_id $device", 1);
-	
 	my $attach_request_json =	{	'volumeAttachment' =>	{
 																'volumeId' => $volume_id,
 																'device' => $device
@@ -453,6 +553,80 @@ sub volumeAttachWait {
 
 }
 
+sub delete_volume {
+	my $volume_id = shift(@_);
+	
+	my $vol_timeout = 0;
+	# wait until available before deleting it
+	while ( 1) {
+		
+		
+		my $vol_info = openstack_api('GET', 'volume', '/volumes/'.$volume_id);
+		unless (defined $vol_info) {
+			print STDERR "error: no vol info returned\n";
+			return undef;
+		}
+		my $vol_status = $vol_info->{'volume'}->{'status'};
+		
+		unless (defined $vol_status) {
+			print STDERR "error: not volume status returned\n";
+			return undef;
+		}
+		
+		if ($vol_status eq 'available') {
+			last;
+		} else {
+			print "volume status: $vol_status (volume id: $volume_id)\n";
+		}
+		
+		if ($vol_timeout > 60) {
+			print STDERR "error: A) delete volume timeout\n";
+			return undef;
+		}
+		sleep 5;
+		$vol_timeout+=5;
+		
+	}
+	
+	#delete volume
+	my $vol_del = openstack_api('DELETE', 'volume', '/volumes/'.$volume_id, {'volume_id'=>$volume_id} );
+	
+	# wait until volume is gone
+	$vol_timeout = 0;
+	while(1) {
+		my $volumes = openstack_api('GET', 'volume', '/volumes/detail');
+		 
+		if (defined $volumes) {
+			my @vol = get_nested_hash_value($volumes, 'volumes', ['id', $volume_id]);
+			
+			if (@vol == 0) {
+				last;
+			} else {
+				my $volume = shift(@vol);
+				
+				my $vol_status =  $volume->{'status'} || "NA";
+				
+				print STDERR "volume still exists.. wait... (status: $vol_status)\n";
+				
+			}
+		} else {
+			print STDERR "warning: /volumes/detail was not returned\n";
+			
+		}
+		if ($vol_timeout > 60) {
+			print STDERR "error: B) delete volume timeout\n";
+			return undef;
+		}
+		
+		sleep 5;
+		$vol_timeout+=5;
+	}
+	
+	
+	return $vol_del;
+}
+
+
 sub volumeCreateWait{
 	my $instname = shift(@_);
 	my $disksize = shift(@_);
@@ -471,7 +645,7 @@ sub volumeCreateWait{
 	
 		
 	# create volume and wait for it to be ready
-	#my $disk_hash = nova2hash($nova." volume-create --display-name ".$instname." ".$disksize, 1);
+	
 	
 	my $try_create=0;
 	my $new_volume_hash=undef;
@@ -522,7 +696,11 @@ sub volumeCreateWait{
 		if (lc($status) eq "error") {
 			# delete volume and try again
 			print STDERR "error: (volumeCreateWait) volume in error state\n";
-			systemp($nova." volume-delete ".$volume_id);
+			
+			
+			my $volume_delete = openstack_api('DELETE', 'volume', '/os-volumes/'.$volume_id); #TODO wait for success
+			
+			
 			return 0;
 		}
 		
@@ -593,14 +771,23 @@ sub json_request {
 		#print "decoded_content: ".$res->decoded_content."\n\n";
 	} else {
 		print STDERR "error: (json_request) \"".$res->status_line, "\"\n\n";
-		$ret_hash = JSON::decode_json($res->decoded_content);
 		
-		if (defined $ret_hash->{'badRequest'}) {
-			print STDERR "json badRequest messsage: ".$ret_hash->{'badRequest'}->{'message'}||"NA"."\n";
-			print STDERR "json badRequest code: ".$ret_hash->{'badRequest'}->{'code'}||"NA"."\n";
-		}
+		eval {
+			$ret_hash = JSON::decode_json($res->decoded_content);
+			1;
+		} or do {
+			my $e = $@;
+			print STDERR "$e\n";
+		};
 		
-		if (defined $ret_hash) {
+		if ( defined($ret_hash) ) {
+		
+			if ( defined($ret_hash->{'badRequest'}) ) {
+				print STDERR "json badRequest messsage: ".$ret_hash->{'badRequest'}->{'message'}||"NA"."\n";
+				print STDERR "json badRequest code: ".$ret_hash->{'badRequest'}->{'code'}||"NA"."\n";
+			}
+		
+		
 			print Dumper($ret_hash)."\n";
 		}
 		
@@ -610,6 +797,12 @@ sub json_request {
 
 	#print json_pretty_print($res->decoded_content)."\n\n";
 	
+	
+	
+	
+	if ($type eq 'DELETE') {
+		return 1;
+	}
 	
 	$ret_hash = JSON::decode_json($res->decoded_content);
 	
@@ -642,37 +835,45 @@ sub os_get_token {
 		
 		my $json_query_hash = {
 			"auth"  => {"passwordCredentials" => {	"username" => $os_username,
-				"password" => $os_password} ,
-				"tenantId" => $os_tenant_id # TODO use tenant name ?
-			}
+													"password" => $os_password } }
 		};
 		
+		if (defined $os_tenant_name) {
+			$json_query_hash->{'auth'}->{'tenantName'} = $os_tenant_name;
+		} elsif (defined $os_tenant_id) {
+			$json_query_hash->{'auth'}->{'tenantId'} = $os_tenant_id;
+		} else {
+			print STDERR "error: os_tenant_name or os_tenant_id needs to be defined.\n";
+			exit(1);
+		}
 		
 		my $ret_hash = json_request('POST', $base_url."/v2.0/tokens", $json_query_hash);
 		
 		
 		
-		print "token: ".$ret_hash->{"access"}->{"token"}->{"id"}."\n";
+		#print "token: ".$ret_hash->{"access"}->{"token"}->{"id"}."\n";
 		
-		$os_token =		$ret_hash->{"access"}->{"token"}->{"id"};
+		$os_token =	$ret_hash->{"access"}->{"token"}->{"id"};
+		
+		unless (defined $os_token) {
+			print Dumper($ret_hash)."\n";
+			print STDERR "error: did not get openstack API token.\n";
+			exit(1);
+		}
+		
 		$os_tenant_id = $ret_hash->{"access"}->{"token"}->{"tenant"}->{"id"};
-		
+		$os_tenant_name = $ret_hash->{"access"}->{"token"}->{"tenant"}->{"name"};
 		
 		#get service uris
-		$volume_endpoint_uri=undef;
-		$nova_endpoint_uri = undef;
+				
 		
-		foreach my $service (@{$ret_hash->{"access"}->{"serviceCatalog"}}) {
-			#print "service: " .$service."\n";
-			print "service_name: " . $service->{'name'} ."\n";
-			
-			if ( $service->{'name'} eq "nova" ) {
-				$nova_endpoint_uri = @{$service->{'endpoints'}}[0]->{'publicURL'};
-			} elsif ( $service->{'name'} eq "volume" ) {
-				$volume_endpoint_uri = @{$service->{'endpoints'}}[0]->{'publicURL'};
-			}
-		}
+		$nova_endpoint_uri   = get_nested_hash_value($ret_hash, 'access' , 'serviceCatalog' , ['name','nova'  ], 'endpoints' , '0', 'publicURL');
 		unless (defined $nova_endpoint_uri) {
+			die;
+		}
+		$volume_endpoint_uri = get_nested_hash_value($ret_hash, 'access' , 'serviceCatalog' , ['name','volume'], 'endpoints' , '0', 'publicURL');
+
+		unless (defined $volume_endpoint_uri) {
 			die;
 		}
 		
@@ -733,11 +934,11 @@ sub os_server_detail_print {
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Servers' });
 	
-	$t->setCols('id', 'name', 'status', 'networks');
+	$t->setCols('id', 'name', 'status', 'networks', 'owner');
 	$t->alignCol('networks','left');
 	
 	my @table;
-	my $simple_hash;
+	#my $simple_hash;
 	foreach my $server (@{$servers_details->{'servers'}}) {
 		
 		my @networks;
@@ -746,10 +947,11 @@ sub os_server_detail_print {
 		}
 		
 		my $server_id = $server->{'id'};
-		$simple_hash->{$server_id}->{'name'}		= $server->{'name'};
-		$simple_hash->{$server_id}->{'status'}		= $server->{'status'};
-		$simple_hash->{$server_id}->{'networks'}	= join(',',@networks);
-		$t->addRow( $server->{'id'} , $server->{'name'}, $server->{'status'}, join(',',@networks) );
+		my $owner = $server->{'metadata'}->{'owner'} || "";
+		#$simple_hash->{$server_id}->{'name'}		= $server->{'name'};
+		#$simple_hash->{$server_id}->{'status'}		= $server->{'status'};
+		#$simple_hash->{$server_id}->{'networks'}	= join(',',@networks);
+		$t->addRow( $server->{'id'} , $server->{'name'}, $server->{'status'}, join(',',@networks), $owner );
 	}
 	
 	print $t;
@@ -903,27 +1105,16 @@ sub info {
 	
 	#my $my_volumes = openstack_api('GET', 'volume', '/volumes');
 	#print Dumper($my_volumes);
-
 	
 	os_flavor_detail_print();
-	#my $nova_flavor_list = nova2hash($nova." flavor-list", $printtable);
 	
 	os_images_detail_print();
-	#my $nova_image_list = nova2hash($nova." image-list", $printtable);
-	
 	
 	os_keypairs_print();
-	#my $nova_keypair_list = nova2hash($nova." keypair-list", $printtable);
-	
 	
 	os_floating_ips_print();
-	#my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", $printtable);
-	
 	
 	os_server_detail_print();
-	#my $nova_list = nova2hash($nova." list", $printtable);
-
-	
 		
 }
 
@@ -1001,25 +1192,22 @@ sub createNew {
 		$image_name = $arg_hash->{"image_name"} || $image_name;
 		print "searching for image with name \"$image_name\"\n";
 		
+		my @image_objects = get_nested_hash_value($images_detail, 'images', ['name', $image_name]);
 		
-		foreach my $image_object (@{$images_detail->{'images'}}) {
-			
-			if ($image_object->{'name'} eq $image_name) {
-				if (defined $image_id) {
-					print "error: image_name \"$image_name\" not unique. Use image ID with --image instead.\n";
-					return undef;
-				}
-				
-				$image_id=$image_object->{'id'};
-			}
-		}
-
-		unless (defined $image_id) {
+		if (@image_objects == 0) {
 			print "error: image_id undefined \n";
 			return undef;
+		} elsif (@image_objects == 1) {
+			my $image_object = $image_objects[0];
+			$image_id=$image_object->{'id'};
+		} else {
+			print "error: image_name \"$image_name\" not unique. Use image ID with --image instead.\n";
+			return undef;
 		}
+
 		
-		$arg_hash->{"image"} = $image_id
+		
+		$arg_hash->{"image"} = $image_id;
 	}
 	
 	
@@ -1057,18 +1245,13 @@ sub createNew {
 	
 	
 	
-	
+	# check keypair
 	my $keypairs = openstack_api('GET', 'nova', '/os-keypairs');
-		
-	my $found_keypair=0;
-	foreach my $keypair (@{$keypairs->{'keypairs'}}) {
-		if ($keypair->{'keypair'}->{'name'} eq $key_name) {
-			$found_keypair=1;
-			last;
-		}
-	}
 	
-	if ($found_keypair == 0) {
+	my ($this_keypair) = get_nested_hash_value($keypairs, 'keypairs', sub {($_->{'keypair'}->{'name'}||"") eq $key_name});
+		
+	unless (defined $this_keypair) {
+		print Dumper($keypairs);
 		print STDERR "error: keypair $key_name not found\n";
 		return undef;
 	}
@@ -1113,17 +1296,21 @@ sub createNew {
 	my $flavor_id=undef;
 	
 	unless (defined $flavor_id) {
-		foreach my $flavor (@{$flavors_detail->{'flavors'}}) {
-			if ($flavor->{'name'} eq $flavor_name) {
-				
-				if (defined $flavor_id) {
-					print STDERR "error: flavor_name is not unique\n";
-					exit(1);
-				}
-				
-				$flavor_id=$flavor->{'id'};
-			}
+		
+		my @flavor_objects = get_nested_hash_value($flavors_detail, 'flavors', ['name', $flavor_name]);
+		
+		
+		if (@flavor_objects ==0) {
+			print STDERR "error: could not find flavour name \"".$flavor_name."\"\n";
+			return undef;
+		} elsif (@flavor_objects ==1) {
+			my $flavor_obj = shift(@flavor_objects);
+			$flavor_id=$flavor_obj->{'id'};
+		} else {
+			print STDERR "error: flavor_name \"".$flavor_name."\" is not unique\n";
+			exit(1);
 		}
+		
 		unless (defined $flavor_id) {
 			print STDERR "error: could not find flavour name \"".$flavor_name."\"\n";
 			return undef;
@@ -1243,15 +1430,15 @@ sub createNew {
 	my $active = 0;
 	my $build = 0;
 	while ($active < $count) {
-		#$nova_list = nova2hash($nova." list", 0);
+		
 		my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
 		$active = 0;
 		$build = 0;
-		#foreach my $id (keys %$nova_list) {
+		
 		foreach my $server (@{$servers_details->{'servers'}}) {
 			
 			if ($server->{'name'} =~ /^$groupname/ ) {
-				#print "got: ".$nova_list->{$id}{Status}."\n";
+				
 				if ($server->{'status'} eq "ACTIVE") {
 					$active++;
 				} elsif ($server->{'status'} eq "BUILD") {
@@ -1261,7 +1448,7 @@ sub createNew {
 		}
 		print "requested instances: ".$count.", BUILD: ".$build.", ACTIVE: ".$active."\n";
 		if ($active != $count) {
-			print "wait few seconds..\n";
+			print "waiting for all VMs to be in ACTIVE status...\n";
 			sleep 5;
 		}
 		
@@ -1331,7 +1518,9 @@ sub createSingleServer {
 		if ($crashed == 1 || $crashed_final==1) {
 			print STDERR "delete previous instance since something went wrong...\n";
 			if (defined $instance_id) {
-				systemp($nova." delete ".$instance_id);
+				
+				my $delete_result = openstack_api('DELETE', 'nova', '/servers/'.$instance_id, { 'server_id' => $instance_id});
+				
 			}
 			
 			
@@ -1342,17 +1531,14 @@ sub createSingleServer {
 					exit(1);
 				}
 				
-				my $volshow = nova2hash($nova." volume-show ".$volume_id, 0);
-				while ($volshow->{'status'}{'Value'} ne 'available' ) {
-					sleep 5;
-					$volshow = nova2hash($nova." volume-show ".$volume_id, 0);
-				}
-				systemp($nova." volume-delete ".$volume_id);
+				delete_volume($volume_id);
+				
 			}
 			
 			if (defined $newip) {
-				systemp($nova." floating-ip-delete ".$newip);
+				delete_IP($newip);
 			}
+			
 			$instance_id=undef;
 			$volume_id=undef;
 			$newip=undef;
@@ -1489,6 +1675,8 @@ sub createSingleServer {
 			$crashed_final = 1;
 			next MAINWHILE;
 		}
+		
+		
 		
 		my @private_addresses = @{$server_address_private};
 		
@@ -1650,6 +1838,7 @@ sub createSingleServer {
 					$mytime+=5;
 					sleep 5;
 				}
+				my $mountpoint = '/mnt2';
 								#"/dev/vdc\t/mnt2\tauto\tdefaults,nobootwait,comment=cloudconfig\t0\t2"
 				while (1) {
 					
@@ -1661,16 +1850,16 @@ sub createSingleServer {
 					$systemp->("sudo mkfs.ext3 $device")==0 or do {print STDERR "error: mkfs\n";$crashed = 1; next;};
 					
 					#mount volume
-					$systemp->("sudo mkdir /mnt2/")==0 or do {print STDERR "error: mkdir mnt2\n";$crashed = 1; next;};
+					$systemp->("sudo mkdir ".$mountpoint."/")==0 or do {print STDERR "error: mkdir ".$mountpoint."\n";$crashed = 1; next;};
 					my $count_fstab  = `grep -c \"\^$device\" /etc/fstab`;
 					
 					if ($count_fstab == 0) {
-						$systemp->("sudo su -c \"echo \'/dev/vdc\t/mnt2\tauto\tdefaults,nobootwait,comment=cloudconfig\t0\t2\' >> /etc/fstab\"");
+						$systemp->("sudo su -c \"echo \'/dev/vdc\t".$mountpoint."\tauto\tdefaults,nobootwait,comment=cloudconfig\t0\t2\' >> /etc/fstab\"");
 					}
-					#$systemp->("sudo mount $device /mnt2/")==0 or do {print STDERR "error: mount\n";$crashed = 1; next;};
+					#$systemp->("sudo mount $device ".$mountpoint."/")==0 or do {print STDERR "error: mount\n";$crashed = 1; next;};
 					system("sudo mount -a")==0 or do {print STDERR "error: mount\n";$crashed = 1; next;};
-					$systemp->("sudo chmod 777 /mnt2")==0 or do {print STDERR "error: chmod \n";$crashed = 1; next;};
-					$systemp->("ln -s /mnt2 /home/$vm_user/data")==0 or do {print STDERR "error: ln\n";$crashed = 1; next;};
+					$systemp->("sudo chmod 777 ".$mountpoint)==0 or do {print STDERR "error: chmod \n";$crashed = 1; next;};
+					$systemp->("ln -s ".$mountpoint." /home/$vm_user/data")==0 or do {print STDERR "error: ln\n";$crashed = 1; next;};
 					
 					sleep 2;
 					my ($mountlines) = `df -h | grep $device | wc -l` =~ /(\d+)/;
@@ -1723,7 +1912,7 @@ sub createSingleServer {
 			my $totaltime=0;
 			while (! defined $newip) {
 				$newip = getIP();
-				if (! defined $newip) {
+				unless(defined $newip) {
 					if ($totaltime >= $timeout ) {
 						print STDERR "error: IP request timeout!\n";
 						$crashed = 1;
@@ -1737,12 +1926,9 @@ sub createSingleServer {
 			if ($crashed ==1) {
 				next;
 			}
-			print "newip: $newip\n";
-			if ($count > 1) {
-				systemp($nova."  add-floating-ip ".$groupname.$child_number." $newip");
-			} else {
-				systemp($nova."  add-floating-ip ".$groupname." $newip");
-			}
+			print "newip: $newip\n"; # $instance_ip
+			my $add_ip = openstack_api('POST', 'nova', '/servers/'.$instance_ip.'/action', {'addFloatingIp' => {'address' => $newip}});
+			
 		}
 		
 		
@@ -1825,23 +2011,23 @@ sub deletebulk {
 	print "groupname: $groupname\n";
 	
 	
-	
-	
-	
-	my $nova_floating_ip_list = nova2hash($nova." floating-ip-list", 1);
-	my $volumelist = nova2hash($nova." volume-list", 1);
+	my $volumes_detail = openstack_api('GET', 'volume', '/volumes/detail')->{'volumes'};
+	#print Dumper($volumes_detail)."\n";
 	
 	my $instanceId_to_volumeId;
-	foreach my $vol_id (keys %$volumelist) {
-		my $instid = $volumelist->{$vol_id}{"Attached to"};
+	foreach my $vol_obj (@{$volumes_detail}) {
+		my $vol_id = $vol_obj->{'id'};
+		#my $instid = #$volumelist->{$vol_id}{"Attached to"};
+		my $instid = get_nested_hash_value($vol_obj, 'attachments', 0, 'server_id');
 		
 		unless (defined $instid) {
-			#print "found undefined\n";
+			#print Dumper($volumes_detail)."\n";
 			next;
 		}
 		$instanceId_to_volumeId->{$instid}=$vol_id;
-		
+		#print "add $instid $vol_id\n";
 	}
+	
 	
 	
 	
@@ -1890,6 +2076,7 @@ sub deletebulk {
 			print STDERR "warning: private_addresses == 0 \n";
 			next;
 		}
+		
 		
 		my $instance_ip_hash = $private_addresses[0];
 		
@@ -1962,52 +2149,36 @@ sub deletebulk {
 	
 	foreach my $id (@id_list) {
 	
-		
-		my $instancename = $id_to_server_hash->{$id}->{'name'};
+		my $server = $id_to_server_hash->{$id};
+		my $instancename = $server->{'name'};
 		
 		if ($instancename =~ /^$groupname/ ) {
 			
 			print "delete ".$instancename." (".$id.")\n";
 			
 			#search IP
-			my $oldip = undef;
-			foreach my $ip (keys %$nova_floating_ip_list) {
-				my $instid = $nova_floating_ip_list->{$ip}{"Instance Id"};
-				unless (defined $instid) {
-					#print "\"Instance Id\" not found for $ip !?\n";
-					next;
-				}
-				if ($instid eq $id) {
-					$oldip = $ip;
-					last;
-				}
-				
-			}
-			
-			
-			#print STDERR "keys in hash: ".join(',', keys %$volumelist)."\n";
+			my $oldip = get_nested_hash_value($server, 'addresses', 'services', 0 , 'addr');
+
+		
 			#search volume
 			my $volume_id = $instanceId_to_volumeId->{$id};
 			
 			
 			
 			# delete instance
-			systemp($nova." delete ".$id);
+			my $delete_result = openstack_api('DELETE', 'nova', '/servers/'.$id, { 'server_id' => $id});
 			$delcount++;
 			
 			# delete ip
 			if (defined $oldip) {
-				systemp($nova." floating-ip-delete ".$oldip);
+				print "delete ip $oldip of instance ".$instancename." (".$id.")\n";
+				delete_IP($oldip);
 			}
 			
 			#delete volume
 			if (defined $volume_id) {
-				#my $volshow = nova2hash($nova." volume-show ".$volume_id, 0);
-				if (waitNovaHashValue("volume-show $volume_id", "status", "Value", "available", 5, 30) == 1){
-					systemp($nova." volume-delete ".$volume_id);
-				} else {
-					print STDERR "error: could not delete vol $volume_id\n";
-				}
+				print "delete volume $volume_id of instance ".$instancename." (".$id.")\n";
+				delete_volume($volume_id);
 			} 
 			
 			
@@ -2021,6 +2192,9 @@ sub deletebulk {
 
 	return $delcount;
 }
+
+
+
 
 sub list_group_print {
 	my $arg_hash = shift(@_);
@@ -2038,22 +2212,36 @@ sub list_group {
 		exit(1);
 	}
 	
-	my $nova_list = nova2hash($nova." list", 1);
+	
+	my $servers_detail = openstack_api('GET', 'nova', '/servers/detail');
+	
+	if (defined $servers_detail->{'servers'}) {
+		$servers_detail = $servers_detail->{'servers'};
+	} else {
+		die;
+	}
 	
 	my @iplist=();
 	
-	foreach my $id (keys %$nova_list) {
-		my $instancename = $nova_list->{$id}{Name};
+	foreach my $server (@{$servers_detail}) {
+		
+		my $instancename = $server->{'name'};  
 		
 		if ($instancename =~ /^$groupname/ ) {
 			
-			#print "found ".$instancename." (".$id.")\n";
+						
 			
-			#print $nova_list->{$id}{Networks}."\n";
+			my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
+			unless (defined $addr_string) {
+				print Dumper($server)."\n";
+				exit(1);
+			}
 			
-			my ($ip) = $nova_list->{$id}{Networks} =~ /10\.0\.(\d+\.\d+)/;
+			
+			my $ip;
+			($ip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
 			unless (defined $ip) {
-				print STDERR "warning: no internal IP found for instance $id ($instancename)...\n";
+				print STDERR "warning: no internal IP found for instance  ($instancename)...\n";
 				next;
 			}
 			push(@iplist, "10.0.".$ip);
