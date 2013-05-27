@@ -37,8 +37,8 @@ Options provided at command line or in the IpFile have higher priority of course
 
 Usage Example
 -------------
-This example is based on vmAWE.pl which is now maintained by Wei and can be found here:
-https://github.com/wtangiit/vmScriptAWE
+This example is based on vmAWE.pl which is now maintained by Wei and can be found here:<br>
+https://github.com/wtangiit/vmScriptAWE<br>
 
 The first four option groups are generic, they are inherited from the ManageBulkInstances.pm module. Only the last two option groups (AWE actions and AWE options) are AWE-specifc options that are defined in the vmAWE.pl script.
 
