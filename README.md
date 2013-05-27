@@ -19,18 +19,20 @@ A nice and fancy feature is the execution of small perl functions directly on th
 Configuration
 -------------
 Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
-OS_USERNAME<br>
-OS_PASSWORD<br>
-OS_AUTH_URL<br>
-OS_TENANT_NAME or OS_TENANT_ID<br>
-<br>
+    OS_USERNAME<br>
+    OS_PASSWORD<br>
+    OS_AUTH_URL<br>
+    OS_TENANT_NAME or OS_TENANT_ID<br>
+
 When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are as lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
-<br>
+
 ~/.bulkvm<br>
-sshkey=~/.ssh/x.pem<br>
-key_name=x<br>
-image_name=Ubuntu Precise 12.04 (Preferred Image)<br>
-username=ubuntu<br>
+
+    sshkey=~/.ssh/x.pem
+    key_name=x
+    image_name=Ubuntu Precise 12.04 (Preferred Image)
+    username=ubuntu
+
 <br>
 Options provided at command line or in the IpFile have higher priority of course.
 
