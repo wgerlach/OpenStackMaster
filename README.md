@@ -95,4 +95,17 @@ options of vmAWE.pl:
  
      example: ./vmAWE.pl --create 2 --sshkey ~/.ssh/x.pem --key_name x --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
 
+Here a source code example on how to start multiple instances:<br>
+
+    my $ip_list = createNew({
+        'flavor_name'	=> 'idp.06',
+        'image_name'	=> 'Ubuntu Precise 12.04 (Preferred Image)',
+        'count'		=> 2,
+        'sshkey'	=> 'your_ssh_key_file.pem',
+        'key_name'	=> 'name of your ssh key stored in OpenStack',
+        'groupname'	=> 'myinstances',
+        'disksize'	=> 500		# 500GB, in case you need more than the default 10 or 300GB
+        })
+
+Returns a reference to an array containing the IP addresses of the new instances.
 
