@@ -5,35 +5,46 @@ Perl modules for the instantiation of, configuration of and communication with m
 
 Requirements
 ------------
-Nova-Tools (http://docs.openstack.org/cli/quick-start/content/install_openstack_nova_cli.html)<br>
-Perl modules: Parallel::ForkManager 0.7.6, File::Flock
+Perl modules: Parallel::ForkManager 0.7.6, File::Flock, JSON
 
 ManageBulkInstances.pm 
 ----------------------
-This modules containes functions to start multiple instances and attach volumes, if needed. At the moment this script uses the nova tools, in the future I will switch to using the JSON-based API.
+This modules containes functions to start multiple instances and attach volumes, if needed. It uses the OpenStack JSON-based API.
 
 SubmitVM.pm
 -----------
 This module contains functions to communicate with the VMs via ssh and scp within a threaded environment. For each VM there is one thread that is responsible for the communication. Most important functionality is the execution of commands on the remote VMs. Long running jobs can be executed within a screen environment, which allows to detach from the VM and periodically check if the job is still running.
 A nice and fancy feature is the execution of small perl functions directly on the remote VM, without the need to create a perl script and scp'ing to the VM.
 
-Configuration file
-------------------
-When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
-<br>
+Configuration
+-------------
+Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
+    OS_USERNAME<br>
+    OS_PASSWORD<br>
+    OS_AUTH_URL<br>
+    OS_TENANT_NAME or OS_TENANT_ID<br>
+
+When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are as lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
+
 ~/.bulkvm<br>
-sshkey=~/.ssh/x.pem<br>
-key_name=x<br>
-image_name=Ubuntu Precise 12.04 (Preferred Image)<br>
-username=ubuntu<br>
+
+    sshkey=~/.ssh/x.pem
+    key_name=x
+    image_name=Ubuntu Precise 12.04 (Preferred Image)
+    username=ubuntu
+
 <br>
 Options provided at command line or in the IpFile have higher priority of course.
 
 
 Usage Example
 -------------
+This example is based on vmAWE.pl which is now maintained by Wei and can be found here:<br>
+https://github.com/wtangiit/vmScriptAWE<br>
 
-example with vmAWE.pl 
+The first four option groups are generic, they are inherited from the ManageBulkInstances.pm module. Only the last two option groups (AWE actions and AWE options) are AWE-specifc options that are defined in the vmAWE.pl script.
+
+options of vmAWE.pl: 
 
     Nova actions:
      --create=i            create i new instances from snapshot/image
@@ -54,7 +65,9 @@ example with vmAWE.pl
      --groupname=s         optional, Openstack instance prefix name
      --nogroupcheck        optional, disables check for unique groupname
      --onlygroupname       optional, instance names all equal groupname
-     --disksize=i          optional, in GB, default 300GB
+     --owner=s             optional, metadata information on VM, default os_username
+     --noownercheck        optional, disables owner check
+     --disksize=i          optional, in GB, creates, attaches and mounts volume
      --wantip              optional, external IP, only with count=1
      --user-data=s         optional, pass user data file to new instances
      --saveIpToFile        optional, saves list of IPs in file (recommended)
@@ -82,4 +95,17 @@ example with vmAWE.pl
  
      example: ./vmAWE.pl --create 2 --sshkey ~/.ssh/x.pem --key_name x --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
 
-Note that all options except AWE actions and AWE options are generic, that means they are inherited from the ManageBulkInstances module. Only the AWE-specifc options are defined in the vmAWE.pl script.
+Here a source code example on how to start multiple instances:<br>
+
+    my $ip_list = createNew({
+        'flavor_name'	=> 'idp.06',
+        'image_name'	=> 'Ubuntu Precise 12.04 (Preferred Image)',
+        'count'		=> 2,
+        'sshkey'	=> 'your_ssh_key_file.pem',
+        'key_name'	=> 'name of your ssh key stored in OpenStack',
+        'groupname'	=> 'myinstances',
+        'disksize'	=> 500		# 500GB, in case you need more than the default 10 or 300GB
+        })
+
+Returns a reference to an array containing the IP addresses of the new instances.
+
