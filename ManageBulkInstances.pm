@@ -74,10 +74,11 @@ my $debug=0;
 
 our $options_basicactions = ["Nova actions",
 							"create=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHash,
-							"delete"		=> "use with --ipfile (recommended) or --iplist",			\&deletebulk,
+#TODO "createtemp=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHashAndDelete, # perl object with destroyer
+							"delete"		=> "use with --group,ipfile or iplist",			\&deletebulk,
 							"info"			=> "list all instances, volumes, flavors...",				\&info,
-							"listgroup"		=> "list all instances with prefix --groupname",			\&list_group_print,
-							"savegroup"		=> "save group with prefix --groupname in ipfile",			\&saveGroupInIpFile
+							"listgroup=s"	=> "list all instances in this group (must be owner)",		\&list_group_print,
+							"savegroup=s"	=> "save group in ipfile",									\&saveGroupInIpFile
 							] ;
 
 our $options_vmactions = ["VM actions",
@@ -90,21 +91,22 @@ our $options_create_opts = ["Create options",
 							"image_name=s"	=> "image name, use with action --create", 					undef,
 							"sshkey=s"		=> "required, path to ssh key file",						undef,
 							"key_name=s"	=> "required, key_name as in Openstack",					undef,
-							"groupname=s"	=> "optional, Openstack instance prefix name",				undef,
-							"nogroupcheck"	=> "optional, disables check for unique groupname",			undef,
+							"groupname=s"	=> "optional, name of the new group",						undef,
+							"nogroupcheck"	=> "optional, use this to add VMs to existing group",		undef,
 							"onlygroupname"	=> "optional, instance names all equal groupname",			undef,
 							"owner=s"		=> "optional, metadata information on VM, default os_username",	undef,
 							"noownercheck"	=> "optional, disables owner check",						undef,
 							"disksize=i"	=> "optional, in GB, creates, attaches and mounts volume",	undef,
 							"wantip"		=> "optional, external IP, only with count=1",				undef,
 							"user-data=s"	=> "optional, pass user data file to new instances",		undef,
-							"saveIpToFile"	=> "optional, saves list of IPs in file (recommended)",		undef
+							"saveIpToFile"	=> "optional, saves list of IPs in file",					undef
 							];
 
 
 our $options_specify = [	"Specify existing VMs for actions and deletion",
 							"ipfile=s"		=> "file containing list of ips with names",				undef,
-							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
+							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef,
+							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef
 							];
 
 our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_specify);
@@ -112,7 +114,33 @@ our @options_all = ($options_basicactions, $options_vmactions, $options_create_o
 ##############################
 # subroutines
 
-
+sub parallell_job_new {
+	my $arg_hash = shift(@_);
+	
+	if (not defined ($arg_hash->{"vmips_ref"}) && defined $arg_hash->{"group"}) {
+		
+		my $group = $arg_hash->{"group"};
+		my $owner = $arg_hash->{'owner'} || $os_username;
+		
+		my $group_iplist = list_group($owner, $group);
+		$arg_hash->{"vmips_ref"} = $group_iplist;
+	}
+	
+	
+	my $result = SubmitVM::parallell_job_new(
+		{	"vmips_ref" => $arg_hash->{"vmips_ref"},
+			"vmargs_ref" => $arg_hash->{"vmargs_ref"},
+			"function_ref" => $arg_hash->{"function_ref"}
+		}
+	);
+	
+	
+	if (defined $arg_hash->{"delete"}) { # this will not be set by command line but by script.
+		deletebulk($arg_hash);
+	}
+	
+	return $result;
+}
 
 #example my $value = get_nested_hash_value($hash, 'name', '1', [key,value] or {($_->{$key}||"") eq $val});
 # returns value, if last step is [key,value], it returns array
@@ -195,6 +223,7 @@ sub runActions { # disable action by overwriting subroutine reference with "unde
 	my $arg_hash_ref = shift(@_);
 	my $options_array_ref = shift(@_);
 	
+	my $action_results = {};
 	
 	foreach my $option_group (@$options_array_ref) {
 		print "    ".${$option_group}[0].":\n";
@@ -209,7 +238,11 @@ sub runActions { # disable action by overwriting subroutine reference with "unde
 			
 				if (defined ${$option_group}[$i+2]) { # check if a function is assigned
 					print "start action $option\n";
-					${$option_group}[$i+2]($arg_hash_ref);
+					my $result = ${$option_group}[$i+2]($arg_hash_ref);
+					
+					if (defined $result) {
+						$action_results->{$option} = $result;
+					}
 				}
 				
 			}
@@ -218,7 +251,7 @@ sub runActions { # disable action by overwriting subroutine reference with "unde
 	}
 
 	
-	return;
+	return $action_results;
 	
 }
 
@@ -284,7 +317,7 @@ sub read_config_file {
 			exit(1);
 		}
 	}
-	
+	print "read configuration from ".$config_file."\n"; 
 	open CONFIG_FILE_STREAM, $config_file or die $!;
 	
 	while (my $line = <CONFIG_FILE_STREAM>) {
@@ -300,7 +333,7 @@ sub read_config_file {
 		
 		if (defined($config_key) && defined($config_value) ) {
 			#print "$config_key $config_value\n";
-			unless (defined $arg_hash->{$config_key}) {
+			#unless (defined $arg_hash->{$config_key}) {
 				if ($config_key eq "iplist") { # ugly
 					my @iparray = split(/,/ , $config_value);
 					$arg_hash->{$config_key} = \@iparray;
@@ -308,7 +341,7 @@ sub read_config_file {
 					$arg_hash->{$config_key} = $config_value;
 				}
 				print "use configuration: ".$line."\n";
-			}
+			#}
 			
 		} else {
 			print STDERR "error parsing line from config file: ".$line."\n";
@@ -934,7 +967,7 @@ sub os_server_detail_print {
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Servers' });
 	
-	$t->setCols('id', 'name', 'status', 'networks', 'owner');
+	$t->setCols('id', 'name', 'status', 'networks', 'owner', 'group');
 	$t->alignCol('networks','left');
 	
 	my @table;
@@ -948,10 +981,11 @@ sub os_server_detail_print {
 		
 		my $server_id = $server->{'id'};
 		my $owner = $server->{'metadata'}->{'owner'} || "";
+		my $group = $server->{'metadata'}->{'group'} || "";
 		#$simple_hash->{$server_id}->{'name'}		= $server->{'name'};
 		#$simple_hash->{$server_id}->{'status'}		= $server->{'status'};
 		#$simple_hash->{$server_id}->{'networks'}	= join(',',@networks);
-		$t->addRow( $server->{'id'} , $server->{'name'}, $server->{'status'}, join(',',@networks), $owner );
+		$t->addRow( $server->{'id'} , $server->{'name'}, $server->{'status'}, join(',',@networks), $owner , $group);
 	}
 	
 	print $t;
@@ -1112,10 +1146,10 @@ sub info {
 	
 	os_keypairs_print();
 	
-	os_floating_ips_print();
-	
 	os_server_detail_print();
-		
+	
+	print "List of floating IPs is always a bit slow, sorry...\n";
+	os_floating_ips_print();
 }
 
 # deprecated !
@@ -1151,16 +1185,28 @@ sub createAndAddToHash {
 	
 	my $iplist_ref = createNew($arg_hash);
 	
+	unless (defined $iplist_ref) {
+		print STDERR "error: create failed.\n";
+		exit(1);
+	}
+	
 	$arg_hash->{"iplist"} = $iplist_ref;
+	
+	$arg_hash->{"group"} = $arg_hash->{"groupname"};
 	return;
 }
 
-
+#example:
+#my $ip_list = createNew({	'flavor_name'	=> 'idp.06',
+#							'image_name'	=> 'Ubuntu Precise 12.04 (Preferred Image)',
+#							'count'			=> 2,
+#							'sshkey'		=> 'your_ssh_key_file.pem',
+#							'key_name'		=> 'name of your ssh key stored in OpenStack',
+#							'groupname'		=> 'myinstances',
+#							'disksize'		=> 500				# 500GB, in case you need nore than the default 10 or 300GB
+#						})
 sub createNew {
 	my $arg_hash = shift(@_);
-	
-	
-	
 	
 	
 	my $flavor_name = $arg_hash->{"flavor_name"};
@@ -1218,12 +1264,12 @@ sub createNew {
 	
 	my $key_name = $arg_hash->{"key_name"};
 	unless (defined $key_name) {
-		print "error: key_name undefined \n";
+		print "error: (createNew) key_name undefined \n";
 		return undef;
 	}
 	my $sshkey = $arg_hash->{"sshkey"};
 	unless (defined $sshkey) {
-		print "error: sshkey undefined \n";
+		print "error: (createNew) sshkey undefined \n";
 		return undef;
 	}
 
@@ -1337,6 +1383,7 @@ sub createNew {
 				$names_used{$old_name}=1;
 			} else {
 				print "error: an instance with that groupname already exists, groupname: $groupname\n";
+				print "disable this error message with --nogroupcheck\n";
 				print "name: ".$server->{'name'}." ID: ".$server->{'id'}."\n";
 				return undef;
 			}
@@ -1471,8 +1518,7 @@ sub createNew {
 
 	
 	if (defined $arg_hash->{"saveIpToFile"}) {
-		
-		saveIpToFile($groupname, $sshkey, \@children_iplist);
+		saveIpToFile($arg_hash, \@children_iplist);
 	}
 	
 	return \@children_iplist;
@@ -1580,7 +1626,7 @@ sub createSingleServer {
 										'flavorRef' => $flavor_id,
 										'key_name' => $key_name,
 										'name' => $instname,
-										'metadata' => {'owner' => $owner}
+										'metadata' => {'owner' => $owner, 'group' => $groupname}
 										#'max_count' => 1,
 										#'min_count' => 1
 		};
@@ -1627,7 +1673,7 @@ sub createSingleServer {
 		my $wait_sec = 0;
 		while ($new_server->{'server'}->{'status'} ne "ACTIVE") {
 			
-			if ($wait_sec > 60) {
+			if ($wait_sec > 180) {
 				print STDERR "error: ACTIVE wait > 60\n";
 				$crashed = 1;
 				next MAINWHILE;
@@ -1943,23 +1989,33 @@ sub createSingleServer {
 sub saveGroupInIpFile {
 	my $arg_hash = shift(@_);
 	
-	my $groupname = $arg_hash->{'groupname'} || die;
-	my $sshkey = $arg_hash->{'sshkey'} || die;
+	my $group = $arg_hash->{'savegroup'} || die;
+	$arg_hash->{'groupname'} = $group; # TODO ugly! group vs groupname
 	
-	my $group_iplist = list_group($groupname);
+	my $owner = $arg_hash->{'owner'} || die;
 	
+	my $group_iplist = list_group($owner, $group);
 		
-	saveIpToFile($groupname, $sshkey, $group_iplist);
+	saveIpToFile($arg_hash, $group_iplist);
 }
 
 sub saveIpToFile {
-	my ($groupname, $sshkey , $ip_ref) = @_;
+	#my ($groupname, $sshkey, $key_name, $ip_ref) = @_;
 	
+	my ($arg_hash, $ip_ref) = @_;
+	
+	
+	my $groupname = $arg_hash->{'groupname'} || die;
+	my $sshkey = $arg_hash->{'sshkey'} || die;
+	my $key_name = $arg_hash->{'key_name'} || die;
+	
+	my $owner = $arg_hash->{"owner"} || $os_username;
+	my $tenant = $arg_hash->{"tenant"} || $os_tenant_name;
 	
 	my @total_ip_list = @$ip_ref;
 	my $iplistfile = $groupname."_iplist.txt";
 	
-	my $arg_hash={};
+	#my $arg_hash={};
 	if (-e $iplistfile) {
 		print "found previous ipfile $iplistfile, will add iplist to that file\n";
 		read_config_file($arg_hash, $iplistfile);
@@ -1970,10 +2026,22 @@ sub saveIpToFile {
 		}
 	}
 	
-	
+	### write ipfile
 	open (MYFILE, '>'.$iplistfile);
 	print MYFILE "groupname=$groupname\n";
 	print MYFILE "sshkey=$sshkey\n";
+	print MYFILE "key_name=$key_name\n";
+	
+	if (defined $arg_hash->{"flavor_name"}) {
+		print MYFILE "flavor_name=".$arg_hash->{"flavor_name"}."\n";
+	} elsif (defined $arg_hash->{"flavor_id"}) {
+		print MYFILE "flavor_id=".$arg_hash->{"flavor_id"}."\n";
+	}
+	
+	if (defined $tenant) {
+		print MYFILE "tenant=$tenant\n";
+	}
+	
 	print MYFILE "iplist=".join(',',@total_ip_list)."\n";
 	close (MYFILE);
 	
@@ -1983,8 +2051,195 @@ sub saveIpToFile {
 	
 }
 
-#verify that all IPs have correct groupname, use option nogroupcheck to diable check
+# delete by owner/group !
 sub deletebulk {
+	
+	my $arg_hash = shift(@_);
+	
+	my $owner = $arg_hash->{"owner"} || $os_username;
+	
+	my $group = $arg_hash->{"group"};
+	
+	unless (defined $group) {
+		print STDERR "error: group not defined, refuse to delete only based on IP\n";
+		exit(1);
+	}
+	
+	if (length($group) < 4) {
+		print STDERR "error: groupname too short, at least 4 characters\n";
+		exit(1);
+	}
+	
+	print "group: $group\n";
+	
+	
+	my $volumes_detail = openstack_api('GET', 'volume', '/volumes/detail')->{'volumes'};
+	#print Dumper($volumes_detail)."\n";
+	
+	# get mapping instanceId_to_volumeId
+	my $instanceId_to_volumeId;
+	foreach my $vol_obj (@{$volumes_detail}) {
+		my $vol_id = $vol_obj->{'id'};
+		#my $instid = #$volumelist->{$vol_id}{"Attached to"};
+		my $instid = get_nested_hash_value($vol_obj, 'attachments', 0, 'server_id');
+		
+		unless (defined $instid) {
+			#print Dumper($volumes_detail)."\n";
+			next;
+		}
+		$instanceId_to_volumeId->{$instid}=$vol_id;
+		#print "add $instid $vol_id\n";
+	}
+	
+	
+	my $servers_detail = openstack_api('GET', 'nova', '/servers/detail');
+	if (defined $servers_detail->{'servers'}) {
+		$servers_detail = $servers_detail->{'servers'};
+	} else {
+		die;
+	}
+	
+	#get more mappings
+	#my $ip_to_server_hash;
+	my $id_to_server_hash;
+	my @id_list=();
+	
+	foreach my $server (@{$servers_detail}) {
+		
+		
+		my $server_owner = $server->{'metadata'}->{'owner'} || "";
+		my $server_group = $server->{'metadata'}->{'group'} || "";
+		
+		if ($owner ne $server_owner || $group ne $server_group ) {
+			next;
+		}
+		
+		
+		my $id = $server->{'id'};
+		
+		
+		unless (defined $id) {
+			print STDERR "warning: id not defined for server\n";
+			next;
+		}
+		
+		if (lc($server->{'status'}) eq "error") {
+			print STDERR "warning: server is in error status, name=".$server->{'name'}." id=$id\n";
+			next;
+		}
+		
+		push(@id_list, $id);
+		$id_to_server_hash->{$id} = $server;
+		
+		#my $instancename = $server->{'name'};
+		
+		
+		# get local IP of instance
+		my $server_address_private = $server->{'addresses'}->{'private'};
+		
+		# not clear to me if 'private' or 'service'
+		unless(defined $server_address_private) {
+			$server_address_private = $server->{'addresses'}->{'service'};
+		}
+		
+		
+		unless(defined $server_address_private) {
+			print STDERR "warning: server_address_private not defined, name=".$server->{'name'}."\n";
+			next;
+		}
+		
+		my @private_addresses = @{$server_address_private};
+		
+		if (@private_addresses == 0) {
+			print STDERR "warning: private_addresses == 0 \n";
+			next;
+		}
+		
+		
+		my $instance_ip_hash = $private_addresses[0];
+		
+		if ($instance_ip_hash->{'version'} ne '4') {
+			print STDERR "warning: instance_ip_hash->\{version\} ne 4\n";
+			next;
+		}
+		
+		my $ip = $instance_ip_hash->{'addr'};
+		
+		unless ($ip =~ /^10\.0\.\d+\.\d+$/) {
+			print STDERR "warning: ip format not ok \"$ip\"\n";
+			next;
+		}
+		
+		#if (defined $ip) {
+			#$ip_to_server_hash->{$ip} = $server;
+			
+		#} else {
+		#	print STDERR "warning: ip not defined\n";
+		#	next;
+		#}
+	}
+	
+	my $delcount =0;
+	
+	
+	
+	foreach my $id (@id_list) {
+		
+		my $server = $id_to_server_hash->{$id};
+		my $instancename = $server->{'name'};
+		
+		unless (defined $instancename) {
+			print "warning: name of server with id $id not defined\n";
+			next;
+		}
+		
+		if ($instancename =~ /^$group/ ) {
+			
+			print "delete ".$instancename." (".$id.")\n";
+			
+			#search IP
+			my $oldip = get_nested_hash_value($server, 'addresses', 'services', 0 , 'addr');
+			
+			
+			#search volume
+			my $volume_id = $instanceId_to_volumeId->{$id};
+			
+			
+			
+			# delete instance
+			my $delete_result = openstack_api('DELETE', 'nova', '/servers/'.$id, { 'server_id' => $id});
+			$delcount++;
+			
+			# delete ip
+			if (defined $oldip) {
+				print "delete ip $oldip of instance ".$instancename." (".$id.")\n";
+				delete_IP($oldip);
+			}
+			
+			#delete volume
+			if (defined $volume_id) {
+				print "delete volume $volume_id of instance ".$instancename." (".$id.")\n";
+				delete_volume($volume_id);
+			}
+			
+			
+			
+			
+		} else {
+			print STDERR "error: prefix name does not match groupname !?\n";
+		}
+		
+		
+	}
+	
+	
+	return $delcount;
+	
+	
+}
+
+#verify that all IPs have correct groupname, use option nogroupcheck to disable check
+sub deletebulk_old {
 	
 	my $arg_hash = shift(@_);
 	
@@ -2014,6 +2269,7 @@ sub deletebulk {
 	my $volumes_detail = openstack_api('GET', 'volume', '/volumes/detail')->{'volumes'};
 	#print Dumper($volumes_detail)."\n";
 	
+	# get mapping instanceId_to_volumeId
 	my $instanceId_to_volumeId;
 	foreach my $vol_obj (@{$volumes_detail}) {
 		my $vol_id = $vol_obj->{'id'};
@@ -2198,17 +2454,24 @@ sub deletebulk {
 
 sub list_group_print {
 	my $arg_hash = shift(@_);
-	my $iplist_ref = ManageBulkInstances::list_group($arg_hash->{"groupname"});
+	my $iplist_ref = ManageBulkInstances::list_group($arg_hash->{"owner"}||$os_username, $arg_hash->{"listgroup"});
 	print "iplist=".join(',', @{$iplist_ref})."\n";
 	
 	return;
 }
 
+
 sub list_group {
-	my $groupname = shift(@_);
+	my ($owner, $group) = @_;
 	
-	unless (defined $groupname) {
-		print STDERR "error: groupname not defined\n";
+	
+	unless (defined $owner) {
+		$owner = $os_username;
+	}
+	
+	
+	unless (defined $group) {
+		print STDERR "error: (list_group) groupname not defined\n";
 		exit(1);
 	}
 	
@@ -2227,14 +2490,19 @@ sub list_group {
 		
 		my $instancename = $server->{'name'};  
 		
-		if ($instancename =~ /^$groupname/ ) {
+		my $server_owner = $server->{'metadata'}->{'owner'} || "";
+		my $server_group = $server->{'metadata'}->{'group'} || "";
+		
+		#if ($instancename =~ /^$groupname/ ) {
+		if (lc($owner) eq lc($server_owner) && lc($group) eq lc($server_group) ) {
 			
 						
 			
 			my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
 			unless (defined $addr_string) {
 				print Dumper($server)."\n";
-				exit(1);
+				print STDERR "warning: addr_string not defined !\n";
+				next;
 			}
 			
 			
@@ -2252,6 +2520,10 @@ sub list_group {
 		
 	}
 	
+	
+	if (@iplist ==0) {
+		print STDERR "warning: no group \"$group\" for owner \"$owner\" found\n";
+	}
 	
 	return \@iplist;
 } 

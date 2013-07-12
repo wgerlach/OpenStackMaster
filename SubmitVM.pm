@@ -66,7 +66,7 @@ sub remote_perl_function {
 	my $data_ref = shift(@_);
 	
 	
-	my ($fh, $tempfilename) = tempfile(UNLINK => 1);
+	my ($fh, $tempfilename) = tempfile( 'submitVMXXXXXXXXX' , UNLINK => 1);
 	
 	#open (TMP, "> $tempfilename")
 	#or die "Error opening $tempfilename: $!";
@@ -94,7 +94,7 @@ sub remote_perl_function {
 		" \' ;".
 		" rm -f $tempbase");
 	
-		
+	system("rm -f ".$tempfilename);
 	return $ret;
 }
 
@@ -379,6 +379,7 @@ sub parallell_job_new {
 		exit(1);
 	}
 	
+	
 	#print "got: ".join(",", @$vmargs_ref)."\n";
 	
 	
@@ -491,7 +492,7 @@ sub parallell_job_new {
 	system("rm -f job_*.communication");
 	
 	#print "mainPID: ".$$."\n";
-	my $tempdir_obj = File::Temp->newdir();
+	my $tempdir_obj = File::Temp->newdir(TEMPLATE => 'submitvmXXXXXXXXX',);
 	my $tempdir = $tempdir_obj->dirname."/";
 	
 	unless (-d $tempdir) {
@@ -606,6 +607,7 @@ sub parallell_job_new {
 	
 	while ($job_finished < $job_count) {
 		
+		print "scheduler: $job_finished of $job_count ready.\n";
 		if (@job_requests_ip == 0 ) {
 			print "scheduler: at the moment no job asks for an IP...\n";
 			sleep 30;
@@ -626,7 +628,7 @@ sub parallell_job_new {
 				
 				
 			}
-			sleep 5;
+			sleep 2;
 		}
 		
 		
