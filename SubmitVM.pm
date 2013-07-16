@@ -360,6 +360,12 @@ sub parallell_job_new {
 		$function_ref = $args_hash->{"function_ref"};
 	}
 	
+	my $ip_to_keyfile;
+	if (defined($args_hash->{"ip_to_keyfile"})) {
+		$ip_to_keyfile = $args_hash->{"ip_to_keyfile"};
+	}
+	
+	
 	
 	unless (defined $args_hash->{"vmips_ref"}) {
 		print STDERR "error: no IPs found\n";
@@ -570,10 +576,16 @@ sub parallell_job_new {
 			
 		} else {
 			
+			my $ssh_options = "-o StrictHostKeyChecking=no";
+			if (defined $ip_to_keyfile) {
+				$ssh_options = " -i ".$ip_to_keyfile->{$ip};
+			}
+			
+			
 			my $func_exit_code=0;# good
 			my $func_ret;
 			eval {
-				$func_ret = &$function_ref($ip, $parameter);
+				$func_ret = &$function_ref($ip, $parameter, $ssh_options);
 			};
 			if($@) {
                 warn "caught error: ".$@;

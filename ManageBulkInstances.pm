@@ -75,7 +75,7 @@ my $debug=0;
 our $options_basicactions = ["Nova actions",
 							"create=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHash,
 #TODO "createtemp=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHashAndDelete, # perl object with destroyer
-							"delete"		=> "use with --group,ipfile or iplist",			\&deletebulk,
+							"delete"		=> "use with --group,ipfile or iplist",						\&deletebulk,
 							"info"			=> "list all instances, volumes, flavors...",				\&info,
 							"listgroup=s"	=> "list all instances in this group (must be owner)",		\&list_group_print,
 							"savegroup=s"	=> "save group in ipfile",									\&saveGroupInIpFile
@@ -89,7 +89,7 @@ our $options_create_opts = ["Create options",
 							"flavor_name=s"	=> "optional, use with --create",							undef,
 							"image=s"		=> "image ID, use with --create",							undef,
 							"image_name=s"	=> "image name, use with action --create", 					undef,
-							"sshkey=s"		=> "required, path to ssh key file",						undef,
+							#"sshkey=s"		=> "required, path to ssh key file",						undef,
 							"key_name=s"	=> "required, key_name as in Openstack",					undef,
 							"groupname=s"	=> "optional, name of the new group",						undef,
 							"nogroupcheck"	=> "optional, use this to add VMs to existing group",		undef,
@@ -104,7 +104,7 @@ our $options_create_opts = ["Create options",
 
 
 our $options_specify = [	"Specify existing VMs for actions and deletion",
-							"ipfile=s"		=> "file containing list of ips with names",				undef,
+							#"ipfile=s"		=> "file containing list of ips with names",				undef,
 							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef,
 							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef
 							];
@@ -114,23 +114,92 @@ our @options_all = ($options_basicactions, $options_vmactions, $options_create_o
 ##############################
 # subroutines
 
+
+sub get_ssh_key_file {
+	my $key_name = shift(@_);
+	
+	my $key_file = $ENV{HOME}."/.ssh/".$key_name.".pem";
+	#print "A $key_file\n";
+	
+	
+	if ( -e $key_file ) {
+		print "key_name: $key_name , file:$key_file\n";
+	} else {
+		print "error: did not find the private ssh keyfile $key_file for key_name $key_name\n";
+		print "either rename your private key or create a symlink in ~/.ssh/\n";
+		exit(1);
+	}
+	return $key_file;
+}
+
 sub parallell_job_new {
 	my $arg_hash = shift(@_);
 	
+	my $owner=$os_username;
+	my $group;
 	if (not defined ($arg_hash->{"vmips_ref"}) && defined $arg_hash->{"group"}) {
 		
-		my $group = $arg_hash->{"group"};
-		my $owner = $arg_hash->{'owner'} || $os_username;
+		$group = $arg_hash->{"group"};
+		$owner = $arg_hash->{'owner'} || $os_username;
 		
 		my $group_iplist = list_group($owner, $group);
 		$arg_hash->{"vmips_ref"} = $group_iplist;
 	}
 	
+	#get IP-to-key_name mapping:
+	my $ip_to_key_mapping={};
+	my $key_name_to_key_file={};
+	my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
+	foreach my $server (@{$servers_details->{'servers'}}) {
+		my $key_name = $server->{'key_name'};
+		unless (defined $key_name) {
+			next;
+		}
+		my $vm_owner = $server->{'metadata'}->{'owner'};
+		my $vm_group = $server->{'metadata'}->{'group'};
+		
+		unless (lc($vm_owner) eq lc($owner)) {
+			next;
+		}
+		if (defined $group) {
+			unless (lc($vm_group) eq lc($group)) {
+				next;
+			}
+		}
+		
+		$key_name_to_key_file->{$key_name}=1;
+		
+		my @networks;
+		foreach my $address (@{$server->{'addresses'}->{'service'}}) {
+			$ip_to_key_mapping->{$address->{'addr'}} = $key_name;
+		}
+		
+	}
+	
+	foreach my $key_name (keys($key_name_to_key_file)) {
+		#print "got key: $key_name\n";
+		
+	
+				
+		$key_name_to_key_file->{$key_name} = get_ssh_key_file($key_name);
+		#print "B\n";
+	}
+	
+	my $ip_to_keyfile={};
+	foreach my $ip (keys(%$ip_to_key_mapping)) {
+		my $key_name = $ip_to_key_mapping->{$ip};
+		my $keyfile = $key_name_to_key_file->{$key_name};
+		$ip_to_keyfile->{$ip} = $keyfile;
+	}
+	
+	
+	#exit(0);
 	
 	my $result = SubmitVM::parallell_job_new(
 		{	"vmips_ref" => $arg_hash->{"vmips_ref"},
 			"vmargs_ref" => $arg_hash->{"vmargs_ref"},
-			"function_ref" => $arg_hash->{"function_ref"}
+			"function_ref" => $arg_hash->{"function_ref"},
+			"ip_to_keyfile" => $ip_to_keyfile
 		}
 	);
 	
@@ -959,6 +1028,12 @@ sub openstack_api {
 
 sub os_server_detail_print {
 	
+	my ($flavor_id_to_size) = shift(@_);
+	
+	unless (defined $flavor_id_to_size) {
+		die;
+	}
+	
 	# ID  | Name | Status  | Networks
 	my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
 	
@@ -970,9 +1045,17 @@ sub os_server_detail_print {
 	$t->setCols('id', 'name', 'status', 'networks', 'owner', 'group');
 	$t->alignCol('networks','left');
 	
+	my $ram_used = 0;
+	my $cpu_used = 0;
+	my $instances_used=0;
+	
 	my @table;
 	#my $simple_hash;
 	foreach my $server (@{$servers_details->{'servers'}}) {
+		$instances_used++;
+		
+		#print Dumper($server);
+		#exit(0);
 		
 		my @networks;
 		foreach my $address (@{$server->{'addresses'}->{'service'}}) {
@@ -982,6 +1065,18 @@ sub os_server_detail_print {
 		my $server_id = $server->{'id'};
 		my $owner = $server->{'metadata'}->{'owner'} || "";
 		my $group = $server->{'metadata'}->{'group'} || "";
+		
+		if (defined $flavor_id_to_size) {
+			my $f_id = $server->{'flavor'}->{'id'};
+			if (defined $f_id) {
+				$ram_used += $flavor_id_to_size->{$f_id}->{'ram'};
+				$cpu_used += $flavor_id_to_size->{$f_id}->{'vcpus'};
+			}
+		} else {
+			die;
+		}
+		
+		
 		#$simple_hash->{$server_id}->{'name'}		= $server->{'name'};
 		#$simple_hash->{$server_id}->{'status'}		= $server->{'status'};
 		#$simple_hash->{$server_id}->{'networks'}	= join(',',@networks);
@@ -989,6 +1084,32 @@ sub os_server_detail_print {
 	}
 	
 	print $t;
+	
+	if (defined $flavor_id_to_size) {
+		
+		
+		my $tenant_quota = openstack_api('GET', 'nova', '/os-quota-sets/'.$os_tenant_id);
+		#print Dumper($tenant_quota);
+		my $tenant_quota_ram =			get_nested_hash_value($tenant_quota, 'quota_set', 'ram');
+		my $tenant_quota_cores =		get_nested_hash_value($tenant_quota, 'quota_set', 'cores');
+		my $tenant_quota_instances =	get_nested_hash_value($tenant_quota, 'quota_set', 'instances');
+		
+		my $t2 = Text::ASCIITable->new({ headingText => 'Resources' });
+		
+		$t2->setCols('resource', 'quota', 'used', 'available');
+		
+		$t2->addRow( 'RAM' , $tenant_quota_ram, $ram_used, ($tenant_quota_ram-$ram_used));
+		$t2->addRow( 'CPU' , $tenant_quota_cores, $cpu_used, ($tenant_quota_cores-$cpu_used));
+		$t2->addRow( 'instances' ,$tenant_quota_instances, $instances_used, ($tenant_quota_instances-$instances_used));
+		
+		
+		#print "RAM        -- quota: $tenant_quota_ram used: $ram_used available: ".($tenant_quota_ram-$ram_used)."\n";
+		#print "CPU        -- quota: $tenant_quota_cores used: $cpu_used available: ".($tenant_quota_cores-$cpu_used)."\n";
+		#print "instances  -- quota: $tenant_quota_instances used: $instances_used available: ".($tenant_quota_instances-$instances_used )."\n";
+		#exit(0);
+		print $t2;
+		
+	}
 	
 }
 
@@ -1007,9 +1128,12 @@ sub os_flavor_detail_print {
 	$t->setCols('ID', 'Name', 'RAM', 'Disk', 'VCPUs');
 	
 	
+	my $flavor_id_to_size={};
+	
 	my @table;
 	foreach my $flavor (@{$flavors_detail->{'flavors'}}) {
 		 push(@table, [$flavor->{'id'}, $flavor->{'name'}, $flavor->{'ram'}, $flavor->{'disk'}, $flavor->{'vcpus'}]);
+		$flavor_id_to_size->{$flavor->{'id'}} = {'ram' => $flavor->{'ram'}, 'vcpus' => $flavor->{'vcpus'}};
 	}
 	
 	@table = sort {$a->[0] <=> $b->[0]} @table;
@@ -1018,7 +1142,11 @@ sub os_flavor_detail_print {
 		$t->addRow($row);
 	}
 	print $t;
+	unless (defined $flavor_id_to_size) {
+		die;
+	}
 	
+	return $flavor_id_to_size;
 }
 
 sub os_images_detail_print {
@@ -1140,16 +1268,20 @@ sub info {
 	#my $my_volumes = openstack_api('GET', 'volume', '/volumes');
 	#print Dumper($my_volumes);
 	
-	os_flavor_detail_print();
+	my $flavor_id_to_size = os_flavor_detail_print();
+	
+	unless (defined $flavor_id_to_size) {
+		die;
+	}
 	
 	os_images_detail_print();
 	
 	os_keypairs_print();
 	
-	os_server_detail_print();
+	os_server_detail_print($flavor_id_to_size);
 	
-	print "List of floating IPs is always a bit slow, sorry...\n";
-	os_floating_ips_print();
+	#print "List of floating IPs is always a bit slow, sorry...\n";
+	#os_floating_ips_print();
 }
 
 # deprecated !
@@ -1267,11 +1399,15 @@ sub createNew {
 		print "error: (createNew) key_name undefined \n";
 		return undef;
 	}
-	my $sshkey = $arg_hash->{"sshkey"};
-	unless (defined $sshkey) {
-		print "error: (createNew) sshkey undefined \n";
-		return undef;
-	}
+	
+	my $sshkey = get_ssh_key_file($key_name);
+	
+	
+	#my $sshkey = $arg_hash->{"sshkey"};
+	#unless (defined $sshkey) {
+	#	print "error: (createNew) sshkey undefined \n";
+	#	return undef;
+	#}
 
 	
 	#$ssh_options = "-o StrictHostKeyChecking=no -i $sshkey";
