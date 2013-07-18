@@ -5,8 +5,8 @@ Perl modules for the instantiation of, configuration of and communication with m
 
 Requirements
 ------------
-Perl modules: Parallel::ForkManager 0.7.6, File::Flock, JSON, Text::ASCIITable
-installation via cpan:
+Perl modules: Parallel::ForkManager 0.7.6, File::Flock, JSON, Text::ASCIITable<br>
+installation via cpan:<br>
 cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::UserAgent
 
 ManageBulkInstances.pm 
