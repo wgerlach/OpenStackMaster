@@ -40,9 +40,9 @@ When you start VMs, you can specify some default options that are used when you 
 
 ~/.bulkvm<br>
 
-> key_name=xyz
-> image_name=Ubuntu Precise 12.04 (Preferred Image)
-> username=ubuntu
+> key_name=xyz<br>
+> image_name=Ubuntu Precise 12.04 (Preferred Image)<br>
+> username=ubuntu<br>
 
 <br>
 Options provided at command line have higher priority of course. Note that your private key file should have the same name as the keyfile and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz.pem .
