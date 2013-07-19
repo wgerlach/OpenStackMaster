@@ -81,8 +81,14 @@ sub remote_perl_function {
 	
 	nstore ({"CODE" => $func_ref, "DATA" => $data_ref}, $tempfilename);
 	
-	my $tempbase = "tempfile.dat";
-	myscp($scp, $tempfilename, $remote.":".$tempbase);
+	my $tempbase = 'tempfile.dat';
+	
+	unless (-e $tempfilename) {
+		print STDERR "error: $tempfilename not found on local system\n";
+		exit(1);
+	}
+	
+	myscp($scp, $tempfilename, $remote.':'.$tempbase);
 	
 	#my $ret = execute_remote_command_backtick($ssh, $remote, "perl -e \'print \\\"hello world \\\"\'");
 	my $ret = execute_remote_command_backtick($ssh, $remote,
@@ -578,7 +584,16 @@ sub parallell_job_new {
 			
 			my $ssh_options = "-o StrictHostKeyChecking=no";
 			if (defined $ip_to_keyfile) {
-				$ssh_options = " -i ".$ip_to_keyfile->{$ip};
+				if (defined $ip_to_keyfile->{$ip}) {
+					$ssh_options = " -i ".$ip_to_keyfile->{$ip};
+				} else {
+					print "error: ip $ip missing in ip_to_keyfile\n";
+					exit(1);
+				}
+			} else {
+				print "error: ip_to_keyfile not defined\n";
+				
+				exit(1);
 			}
 			
 			

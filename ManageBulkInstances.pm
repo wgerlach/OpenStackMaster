@@ -21,11 +21,16 @@ use SubmitVM;
 use Getopt::Long;
 use List::Util qw(first);
 
-use LWP::UserAgent;
+eval "use LWP::UserAgent; 1"
+or die "module required: cpan install LWP::UserAgent";
 
 eval "use JSON; 1"
 	or die "module required: cpan install JSON";
 use Data::Dumper;
+
+eval "use Text::ASCIITable; 1"
+or die "module required: cpan install Text::ASCIITable";
+
 
 # purpose of this module: wrapper for nova tools
 
@@ -105,8 +110,9 @@ our $options_create_opts = ["Create options",
 
 our $options_specify = [	"Specify existing VMs for actions and deletion",
 							#"ipfile=s"		=> "file containing list of ips with names",				undef,
-							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef,
-							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef
+							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef,
+							"instance=s"	=> "use single VMs with this instance name",				undef,
+							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
 							];
 
 our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_specify);
@@ -137,14 +143,25 @@ sub parallell_job_new {
 	
 	my $owner=$os_username;
 	my $group;
-	if (not defined ($arg_hash->{"vmips_ref"}) && defined $arg_hash->{"group"}) {
-		
+	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"group"} && $arg_hash->{"group"} ne '' ) {
+		print "parallell_job_new: use group: ".$arg_hash->{"group"}."\n";
 		$group = $arg_hash->{"group"};
 		$owner = $arg_hash->{'owner'} || $os_username;
 		
 		my $group_iplist = list_group($owner, $group);
 		$arg_hash->{"vmips_ref"} = $group_iplist;
 	}
+	
+	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"instance"} && $arg_hash->{"instance"} ne '') {
+		print "parallell_job_new: use instance\n";
+		
+		$owner = $arg_hash->{'owner'} || $os_username;
+		
+		my $instance_ip = get_instance_ip($arg_hash->{"instance"} , $owner);
+		$arg_hash->{"vmips_ref"} = [$instance_ip];
+	}
+
+	
 	
 	#get IP-to-key_name mapping:
 	my $ip_to_key_mapping={};
@@ -157,6 +174,14 @@ sub parallell_job_new {
 		}
 		my $vm_owner = $server->{'metadata'}->{'owner'};
 		my $vm_group = $server->{'metadata'}->{'group'};
+		
+		unless (defined $vm_owner) {
+			next;
+		}
+		
+		unless (defined $vm_group) {
+			next;
+		}
 		
 		unless (lc($vm_owner) eq lc($owner)) {
 			next;
@@ -924,7 +949,10 @@ sub os_get_token {
 		
 		# API: http://api.openstack.org/api-ref.html
 		
-				
+		unless (defined $os_auth_url) {
+			print STDERR "error: os_auth_url not defined.\n";
+			exit(1);
+		}
 		
 		my ($base_url) = $os_auth_url =~ /(https?\:\/\/.*:\d+)/;
 		
@@ -1038,7 +1066,7 @@ sub os_server_detail_print {
 	my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
 	
 	
-	require Text::ASCIITable;
+	#require Text::ASCIITable;
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Servers' });
 	
@@ -1094,13 +1122,13 @@ sub os_server_detail_print {
 		my $tenant_quota_cores =		get_nested_hash_value($tenant_quota, 'quota_set', 'cores');
 		my $tenant_quota_instances =	get_nested_hash_value($tenant_quota, 'quota_set', 'instances');
 		
-		my $t2 = Text::ASCIITable->new({ headingText => 'Resources' });
+		my $t2 = Text::ASCIITable->new({ headingText => "Resources ($os_tenant_name)" });
 		
 		$t2->setCols('resource', 'quota', 'used', 'available');
 		
-		$t2->addRow( 'RAM' , $tenant_quota_ram, $ram_used, ($tenant_quota_ram-$ram_used));
-		$t2->addRow( 'CPU' , $tenant_quota_cores, $cpu_used, ($tenant_quota_cores-$cpu_used));
 		$t2->addRow( 'instances' ,$tenant_quota_instances, $instances_used, ($tenant_quota_instances-$instances_used));
+		$t2->addRow( 'CPU' , $tenant_quota_cores, $cpu_used, ($tenant_quota_cores-$cpu_used));
+		$t2->addRow( 'RAM (GB)' , int($tenant_quota_ram/1024), int($ram_used/1024), int((($tenant_quota_ram-$ram_used)/1024)) );
 		
 		
 		#print "RAM        -- quota: $tenant_quota_ram used: $ram_used available: ".($tenant_quota_ram-$ram_used)."\n";
@@ -1121,7 +1149,7 @@ sub os_flavor_detail_print {
 	
 	#print json_pretty_print($flavors_detail)."\n";
 	#return;
-	require Text::ASCIITable;
+	#require Text::ASCIITable;
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Flavors' , chaining => 1 });
 	
@@ -1156,7 +1184,7 @@ sub os_images_detail_print {
 	
 	#print json_pretty_print($images_detail)."\n";
 	#return;
-	require Text::ASCIITable;
+	#require Text::ASCIITable;
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Images' });
 	
@@ -1191,7 +1219,7 @@ sub os_keypairs_print {
 	
 	#print json_pretty_print($images_detail)."\n";
 	#return;
-	require Text::ASCIITable;
+	#require Text::ASCIITable;
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Keypairs' });
 	
@@ -1224,7 +1252,7 @@ sub os_floating_ips_print {
 	#print Dumper($floating_ips);
 	#return;
 	
-	require Text::ASCIITable;
+	#require Text::ASCIITable;
 	
 	my $t = Text::ASCIITable->new({ headingText => 'Floating IPs' });
 	
@@ -2662,6 +2690,71 @@ sub list_group {
 	}
 	
 	return \@iplist;
-} 
+}
 
-
+sub get_instance_ip {
+	my ($instance_name, $owner) = @_;
+	
+	
+	unless (defined $owner) {
+		$owner = $os_username;
+	}
+	
+	
+	my $servers_detail = openstack_api('GET', 'nova', '/servers/detail');
+	
+	if (defined $servers_detail->{'servers'}) {
+		$servers_detail = $servers_detail->{'servers'};
+	} else {
+		die;
+	}
+	
+	my @iplist=();
+	
+	foreach my $server (@{$servers_detail}) {
+		
+		my $vm_instancename = $server->{'name'};
+		
+		my $server_owner = $server->{'metadata'}->{'owner'} || "";
+		#my $server_group = $server->{'metadata'}->{'group'} || "";
+		
+		#if ($instancename =~ /^$groupname/ ) {
+		if (lc($owner) eq lc($server_owner) && lc($instance_name) eq lc($vm_instancename) ) {
+			
+			
+			
+			my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
+			unless (defined $addr_string) {
+				print Dumper($server)."\n";
+				print STDERR "warning: addr_string not defined !\n";
+				next;
+			}
+			
+			
+			my $ip;
+			($ip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
+			unless (defined $ip) {
+				print STDERR "warning: no internal IP found for instance  ($vm_instancename)...\n";
+				next;
+			}
+			push(@iplist, "10.0.".$ip);
+			print "10.0.".$ip." ".$vm_instancename."\n";
+			
+			
+		}
+		
+	}
+	
+	
+	if (@iplist ==0) {
+		print STDERR "error: no instance \"$instance_name\" for owner \"$owner\" found\n";
+		exit(1);
+	}
+	
+	if (@iplist > 1) {
+		print STDERR "error: more than one instance with the name \"$instance_name\" for owner \"$owner\" found\n";
+		exit(1);
+	}
+	
+	return shift(@iplist);
+}
