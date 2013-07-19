@@ -114,4 +114,22 @@ options of vmAWE.pl:
  
  Option priorities: 1) command line 2) ipfile 3) ~/.bulkvm ; for 2 and 3 use: sshkey=~/.ssh/dm_new_magellan.pem
  
- example: ./vmAWE.pl --create 2 --key_name dmnewmagellanpub --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
+ AWE specific example: ./vmAWE.pl --create 2 --key_name dmnewmagellanpub --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
+
+Examples
+-------
+
+Show tenant resources:
+> vmAWE.pl --info
+
+Start instance from default image:
+> vmAWE.pl --create 5 --flavor_name idp.100 --groupname mygroup
+
+List group:
+> vmAWE.pl --listgroup mygroup
+
+Do something with group (script-specific, in this AWE example the AWE client will started on all VMs in the group "mygroup")
+> vmAWE.pl --group mygroup --startawe
+
+Delete group:
+> vmAWE.pl --delete --group mygroup
