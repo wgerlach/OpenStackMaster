@@ -19,7 +19,7 @@ If you want to use AWE, you might want to download this script:<br>
 > wget https://github.com/wtangiit/vmScriptAWE/raw/master/vmAWE.pl<br>
 > chmod +x vmAWE.pl<br>
 
-Configure your ~/.bashrc and create ~/.bulkvm explained below.<br>
+Configure your ~/.bashrc and create ~/.bulkvm as explained below.<br>
 
 Test vmAWE.pl:<br>
 > vmAWE.pl --info
@@ -33,20 +33,19 @@ Please defined the following environment variables, or modify ManageBulkInstance
 > OS_AUTH_URL=<br>
 > OS_TENANT_NAME= or OS_TENANT_ID=<br>
 
-Afterwards, do not forget:
+Afterwards, do not forget to update the current shell:
 > . ~/.bashrc
 
-When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are as lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
+When you start VMs, you can specify some default options that are used when you create new VMs, e.g. default ssh key_name, or default image you want. Username ubuntu is currently required.<br>
 
 ~/.bulkvm<br>
 
-    sshkey=~/.ssh/x.pem
-    key_name=x
-    image_name=Ubuntu Precise 12.04 (Preferred Image)
-    username=ubuntu
+> key_name=xyz
+> image_name=Ubuntu Precise 12.04 (Preferred Image)
+> username=ubuntu
 
 <br>
-Options provided at command line or in the IpFile have higher priority of course.
+Options provided at command line have higher priority of course. Note that your private key file should have the same name as the keyfile and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz.pem .
 
 ManageBulkInstances.pm 
 ----------------------
