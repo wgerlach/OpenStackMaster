@@ -1,30 +1,40 @@
 BulkVM
 ======
 
-Perl modules for the instantiation of, configuration of and communication with multiple VMs in an Openstack environment
+Perl modules for the instantiation of, configuration of and communication with multiple VMs in an Openstack environment.
 
-Requirements
+Installation
 ------------
-Perl modules: Parallel::ForkManager 0.7.6, File::Flock, JSON, Text::ASCIITable<br>
-installation via cpan:<br>
-cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::UserAgent
+Install some Perl libraries:
+> sudo apt-get install liblocal-lib-perl libio-all-lwp-perl XXX libnet-ssleay-perl libcrypt-ssleay-perl<br>
+> sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable XXXX LWP::UserAgent LWP::Protocol::https<br>
 
-ManageBulkInstances.pm 
-----------------------
-This modules containes functions to start multiple instances and attach volumes, if needed. It uses the OpenStack JSON-based API.
+Make sure that Parallel::ForkManager is at least version 0.7.6.
 
-SubmitVM.pm
------------
-This module contains functions to communicate with the VMs via ssh and scp within a threaded environment. For each VM there is one thread that is responsible for the communication. Most important functionality is the execution of commands on the remote VMs. Long running jobs can be executed within a screen environment, which allows to detach from the VM and periodically check if the job is still running.
-A nice and fancy feature is the execution of small perl functions directly on the remote VM, without the need to create a perl script and scp'ing to the VM.
+Do a "git clone" of this repository or simply wget the two modules:
+> wget https://github.com/wgerlach/BulkVM/raw/master/ManageBulkInstances.pm<br>
+> wget https://github.com/wgerlach/BulkVM/raw/master/SubmitVM.pm<br>
+
+If you want to use AWE, you might want to download this script:<br>
+> wget https://github.com/wtangiit/vmScriptAWE/raw/master/vmAWE.pl<br>
+> chmod +x vmAWE.pl<br>
+
+Configure your ~/.bashrc and create ~/.bulkvm explained below.<br>
+
+Test vmAWE.pl:<br>
+> vmAWE.pl --info
+
 
 Configuration
 -------------
 Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
-    OS_USERNAME<br>
-    OS_PASSWORD<br>
-    OS_AUTH_URL<br>
-    OS_TENANT_NAME or OS_TENANT_ID<br>
+> OS_USERNAME=<br>
+> OS_PASSWORD=<br>
+> OS_AUTH_URL=<br>
+> OS_TENANT_NAME= or OS_TENANT_ID=<br>
+
+Afterwards, do not forget:
+> . ~/.bashrc
 
 When you start VMs, you have to specify some options like which ssh key to use, or which image you want. If you are as lazy as I am, configure any option in the .bulkvm file in you home directory, like this:<br>
 
@@ -37,6 +47,16 @@ When you start VMs, you have to specify some options like which ssh key to use, 
 
 <br>
 Options provided at command line or in the IpFile have higher priority of course.
+
+ManageBulkInstances.pm 
+----------------------
+This modules containes functions to start multiple instances and attach volumes, if needed. It uses the OpenStack JSON-based API.
+
+SubmitVM.pm
+-----------
+This module contains functions to communicate with the VMs via ssh and scp within a threaded environment. For each VM there is one thread that is responsible for the communication. Most important functionality is the execution of commands on the remote VMs. Long running jobs can be executed within a screen environment, which allows to detach from the VM and periodically check if the job is still running.
+A nice and fancy feature is the execution of small perl functions directly on the remote VM, without the need to create a perl script and scp'ing to the VM.
+
 
 
 Usage Example
