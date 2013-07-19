@@ -6,8 +6,8 @@ Perl modules for the instantiation of, configuration of and communication with m
 Installation
 ------------
 Install some Perl libraries:
-> sudo apt-get install liblocal-lib-perl libio-all-lwp-perl XXX libnet-ssleay-perl libcrypt-ssleay-perl<br>
-> sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable XXXX LWP::UserAgent LWP::Protocol::https<br>
+> sudo apt-get install liblocal-lib-perl libio-all-lwp-perl<br>
+> sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable<br>
 
 Make sure that Parallel::ForkManager is at least version 0.7.6.
 
