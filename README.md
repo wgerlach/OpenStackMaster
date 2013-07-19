@@ -69,10 +69,10 @@ options of vmAWE.pl:
 
     Nova actions:
      --create=i            create i new instances from snapshot/image
-     --delete              use with --ipfile (recommended) or --iplist
+     --delete              use with --group,ipfile or iplist
      --info                list all instances, volumes, flavors...
-     --listgroup           list all instances with prefix --groupname
-     --savegroup           save group with prefix --groupname in ipfile
+     --listgroup=s         list all instances in this group (must be owner)
+     --savegroup=s         save group in ipfile
 
     VM actions:
      --sshtest             try to ssh all instances
@@ -81,20 +81,20 @@ options of vmAWE.pl:
      --flavor_name=s       optional, use with --create
      --image=s             image ID, use with --create
      --image_name=s        image name, use with action --create
-     --sshkey=s            required, path to ssh key file
      --key_name=s          required, key_name as in Openstack
-     --groupname=s         optional, Openstack instance prefix name
-     --nogroupcheck        optional, disables check for unique groupname
+     --groupname=s         optional, name of the new group
+     --nogroupcheck        optional, use this to add VMs to existing group
      --onlygroupname       optional, instance names all equal groupname
      --owner=s             optional, metadata information on VM, default os_username
      --noownercheck        optional, disables owner check
      --disksize=i          optional, in GB, creates, attaches and mounts volume
      --wantip              optional, external IP, only with count=1
      --user-data=s         optional, pass user data file to new instances
-     --saveIpToFile        optional, saves list of IPs in file (recommended)
+     --saveIpToFile        optional, saves list of IPs in file
 
     Specify existing VMs for actions and deletion:
-     --ipfile=s            file containing list of ips with names
+     --group=s             use VMs with this groupname (metadata-field)
+     --instance=s          use single VMs with this instance name
      --iplist=s@           list of ips, comma separated, use with --sshkey
 
     AWE actions (independent, can be combinded):
@@ -112,21 +112,6 @@ options of vmAWE.pl:
      --awegroup=s          optional, use with actions --awecfg
 
  
-     Option priorities: 1) command line 2) ipfile 3) ~/.bulkvm ; for 2 and 3 use: sshkey=~/.ssh/dm_new_magellan.pem
+ Option priorities: 1) command line 2) ipfile 3) ~/.bulkvm ; for 2 and 3 use: sshkey=~/.ssh/dm_new_magellan.pem
  
-     example: ./vmAWE.pl --create 2 --sshkey ~/.ssh/x.pem --key_name x --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
-
-Here a source code example on how to start multiple instances:<br>
-
-    my $ip_list = createNew({
-        'flavor_name'	=> 'idp.06',
-        'image_name'	=> 'Ubuntu Precise 12.04 (Preferred Image)',
-        'count'		=> 2,
-        'sshkey'	=> 'your_ssh_key_file.pem',
-        'key_name'	=> 'name of your ssh key stored in OpenStack',
-        'groupname'	=> 'myinstances',
-        'disksize'	=> 500		# 500GB, in case you need more than the default 10 or 300GB
-        })
-
-Returns a reference to an array containing the IP addresses of the new instances.
-
+ example: ./vmAWE.pl --create 2 --key_name dmnewmagellanpub --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
