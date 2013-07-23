@@ -110,9 +110,6 @@ options of vmAWE.pl:
      --serverurl=s         optional, use with action --awecfg
      --awegroup=s          optional, use with actions --awecfg
 
- 
-Complicated AWE specific example:
-> vmAWE.pl --create 2 --key_name dmnewmagellanpub --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
 
 Show tenant resources:
 > vmAWE.pl --info
@@ -128,3 +125,7 @@ Do something with group (script-specific, in this AWE example the AWE client wil
 
 Delete group:
 > vmAWE.pl --delete --group mygroup
+
+Complicated AWE specific example (everything in one step: creates VMs, installs AWE clients, configures them, start clients):
+> vmAWE.pl --create 2 --key_name dmnewmagellanpub --awecfg awe.cfg --groupname MY_UNIQUE_NAME --awegroup MY_UNIQUE_NAME --update --startawe    2>&1 | tee vmawe.log
+
