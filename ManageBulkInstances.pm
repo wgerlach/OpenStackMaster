@@ -91,22 +91,24 @@ our $options_vmactions = ["VM actions",
 							] ;
 
 our $options_create_opts = ["Create options",
-							"flavor_name=s"	=> "optional, use with --create",							undef,
-							"image=s"		=> "image ID, use with --create",							undef,
-							"image_name=s"	=> "image name, use with action --create", 					undef,
+							"flavor_name=s"	=> "flavor name for hardware selection",					undef,
+							"image=s"		=> "image identifier",										undef,
+							"image_name=s"	=> "image name, as alternative to image identifer", 		undef,
 							#"sshkey=s"		=> "required, path to ssh key file",						undef,
-							"key_name=s"	=> "required, key_name as in Openstack",					undef,
-							"groupname=s"	=> "optional, name of the new group",						undef,
-							"nogroupcheck"	=> "optional, use this to add VMs to existing group",		undef,
-							"onlygroupname"	=> "optional, instance names all equal groupname",			undef,
+							"key_name=s"	=> "ssh key_name as in Openstack",							undef,
+							"groupname=s"	=> "required, name of the new group",						undef,
+							"nogroupcheck"	=> "use this to add VMs to existing group",					undef,
+							"onlygroupname"	=> "instance names all equal groupname",					undef,
 							"owner=s"		=> "optional, metadata information on VM, default os_username",	undef,
-							"noownercheck"	=> "optional, disables owner check",						undef,
-							"disksize=i"	=> "optional, in GB, creates, attaches and mounts volume",	undef,
-							"wantip"		=> "optional, external IP, only with count=1",				undef,
-							"user-data=s"	=> "optional, pass user data file to new instances",		undef,
-							"saveIpToFile"	=> "optional, saves list of IPs in file",					undef
+							"disksize=i"	=> "in GB, creates, attaches, partitions and mounts volume",undef,
+							"wantip"		=> "external IP, only with count=1",						undef,
+							"user-data=s"	=> "pass user data file to new instances",					undef,
+							"saveIpToFile"	=> "saves list of IPs in file",								undef
 							];
 
+our $options_delete_opts = ["Delete options",
+							"noownercheck"	=> "disables owner check",									undef
+							];
 
 our $options_specify = [	"Specify existing VMs for actions and deletion",
 							#"ipfile=s"		=> "file containing list of ips with names",				undef,
@@ -115,7 +117,7 @@ our $options_specify = [	"Specify existing VMs for actions and deletion",
 							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
 							];
 
-our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_specify);
+our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_delete_opts, $options_specify);
 
 ##############################
 # subroutines
@@ -124,18 +126,24 @@ our @options_all = ($options_basicactions, $options_vmactions, $options_create_o
 sub get_ssh_key_file {
 	my $key_name = shift(@_);
 	
-	my $key_file = $ENV{HOME}."/.ssh/".$key_name.".pem";
+	my $key_file = $ENV{HOME}."/.ssh/".$key_name ; #.".pem";
 	#print "A $key_file\n";
-	
-	
+
 	if ( -e $key_file ) {
-		print "key_name: $key_name , file:$key_file\n";
+		print "key_name: $key_name , file: $key_file\n";
+		return $key_file;
+	}
+	# try .pem-file
+	my $pemkey_file = $key_file.'.pem';
+	
+	if ( -e $pemkey_file ) {
+		print "key_name: $key_name , file: $pemkey_file\n";
 	} else {
-		print "error: did not find the private ssh keyfile $key_file for key_name $key_name\n";
+		print "error: did not find the private ssh keyfile $key_file (or $pemkey_file) for key_name $key_name\n";
 		print "either rename your private key or create a symlink in ~/.ssh/\n";
 		exit(1);
 	}
-	return $key_file;
+	return $pemkey_file;
 }
 
 sub parallell_job_new {
