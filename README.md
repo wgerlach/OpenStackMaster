@@ -21,10 +21,6 @@ If you want to use AWE, you might want to download this script:<br>
 
 Configure your ~/.bashrc and create ~/.bulkvm as explained below.<br>
 
-Test vmAWE.pl:<br>
-> vmAWE.pl --info
-
-
 Configuration
 -------------
 Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
@@ -46,6 +42,9 @@ When you start VMs, you can specify some default options that are used when you 
 
 <br>
 Options provided at command line have higher priority of course. Note that your private key file should have the same name as the key_name in Openstack and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz.pem .
+
+Test configuration, e.g. with vmAWE.pl:<br>
+> vmAWE.pl --info
 
 ManageBulkInstances.pm 
 ----------------------
