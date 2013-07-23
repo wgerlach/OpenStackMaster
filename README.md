@@ -45,7 +45,7 @@ When you start VMs, you can specify some default options that are used when you 
 > username=ubuntu<br>
 
 <br>
-Options provided at command line have higher priority of course. Note that your private key file should have the same name as the keyfile and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz.pem .
+Options provided at command line have higher priority of course. Note that your private key file should have the same name as the key_name in Openstack and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz.pem .
 
 ManageBulkInstances.pm 
 ----------------------
