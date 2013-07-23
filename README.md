@@ -120,7 +120,7 @@ Start instance from default image:
 List group:
 > vmAWE.pl --listgroup mygroup
 
-Do something with group (script-specific, in this AWE example the AWE client will started on all VMs in the group "mygroup")
+Do something with group (script-specific, in this example the AWE client will be started on all VMs in the group "mygroup")
 > vmAWE.pl --group mygroup --startawe
 
 Delete group:
