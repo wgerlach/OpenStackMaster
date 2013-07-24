@@ -585,7 +585,7 @@ sub parallell_job_new {
 			my $ssh_options = "-o StrictHostKeyChecking=no";
 			if (defined $ip_to_keyfile) {
 				if (defined $ip_to_keyfile->{$ip}) {
-					$ssh_options = " -i ".$ip_to_keyfile->{$ip};
+					$ssh_options .= " -i ".$ip_to_keyfile->{$ip};
 				} else {
 					print "error: ip $ip missing in ip_to_keyfile\n";
 					exit(1);
