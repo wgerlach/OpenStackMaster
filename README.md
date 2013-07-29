@@ -32,13 +32,12 @@ Please defined the following environment variables, or modify ManageBulkInstance
 Afterwards, do not forget to update the current shell:
 > . ~/.bashrc
 
-When you start VMs, you can specify some default options that are used when you create new VMs, e.g. default ssh key_name, or default image you want. Username ubuntu is currently required.<br>
+When you start VMs, you can specify some default options that are used when you create new VMs, e.g. default ssh key_name, or default image you want.<br>
 
 ~/.bulkvm<br>
 
 > key_name=xyz<br>
 > image_name=Ubuntu Precise 12.04 (Preferred Image)<br>
-> username=ubuntu<br>
 
 <br>
 Options provided at command line have higher priority of course. Note that your private key file should have the same name as the key_name in Openstack and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz or ~/.ssh/xyz.pem .
