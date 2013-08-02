@@ -83,7 +83,9 @@ our $options_basicactions = ["Nova actions",
 							"delete"		=> "use with --group,ipfile or iplist",						\&deletebulk,
 							"info"			=> "list all instances, volumes, flavors...",				\&info,
 							"listgroup=s"	=> "list all instances in this group (must be owner)",		\&list_group_print,
-							"savegroup=s"	=> "save group in ipfile",									\&saveGroupInIpFile
+							"listips"		=> "list all instances by group or instance_names",			\&list_ips_print,
+							"savegroup=s"	=> "save group in ipfile",									\&saveGroupInIpFile,
+							"newgroupname=s" => "rename group, value is new name",						\&renameGroup
 							] ;
 
 our $options_vmactions = ["VM actions",
@@ -99,11 +101,13 @@ our $options_create_opts = ["Create options",
 							"groupname=s"	=> "required, name of the new group",						undef,
 							"nogroupcheck"	=> "use this to add VMs to existing group",					undef,
 							"onlygroupname"	=> "instance names all equal groupname",					undef,
+							"namelist"		=> "comma-separated list of names to choose from",			undef,
 							"owner=s"		=> "optional, metadata information on VM, default os_username",	undef,
 							"disksize=i"	=> "in GB, creates, attaches, partitions and mounts volume",undef,
 							"wantip"		=> "external IP, only with count=1",						undef,
 							"user-data=s"	=> "pass user data file to new instances",					undef,
-							"saveIpToFile"	=> "saves list of IPs in file",								undef
+							"saveIpToFile"	=> "saves list of IPs in file",								undef,
+							"greedy"		=> "continue with VM creation, even if some fail",			undef
 							];
 
 our $options_delete_opts = ["Delete options",
@@ -113,7 +117,7 @@ our $options_delete_opts = ["Delete options",
 our $options_specify = [	"Specify existing VMs for actions and deletion",
 							#"ipfile=s"		=> "file containing list of ips with names",				undef,
 							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef,
-							"instance=s"	=> "use single VMs with this instance name",				undef,
+							"instance_names=s" => "VMs with these names, requires --groupname",			undef,
 							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
 							];
 
@@ -122,6 +126,89 @@ our @options_all = ($options_basicactions, $options_vmactions, $options_create_o
 ##############################
 # subroutines
 
+sub renameGroup {
+	my $arg_hash = shift(@_);
+	
+	unless (defined $arg_hash->{'newgroupname'} ) {
+		die;
+	}
+	my $newgroupname = $arg_hash->{'newgroupname'};
+	
+	my @instance_names = () ;
+	if (defined $arg_hash->{'instance_names'}) {
+		@instance_names = split(',', $arg_hash->{'instance_names'});
+	}
+	my @instance_ids = ();
+	if (defined $arg_hash->{'instance_ids'}) {
+		@instance_ids = split(',', $arg_hash->{'instance_ids'});
+	}
+	
+	my $server_hash = ManageBulkInstances::get_instances( {	'owner' => $arg_hash->{"owner"}||$os_username,
+		'instance_names' => \@instance_names,
+		'groupname' => $arg_hash->{"groupname"}, # only for instance_names
+		'instance_ids' => \@instance_ids,
+		'group' => $arg_hash->{"group"},
+		'return_hash' => 1
+	} );
+	
+	
+	
+	my $groupname;
+	if (defined $arg_hash->{"group"}) {
+		$groupname = $arg_hash->{"group"};
+	}
+	
+	if (defined $arg_hash->{"groupname"}) {
+		$groupname = $arg_hash->{"groupname"};
+	}
+	
+	print "would rename these guys=".join(',', keys(%$server_hash))."\n";
+	
+	foreach my $server_id (keys(%$server_hash)) {
+		
+		my $old_name = $server_hash->{$server_id}->{'name'};
+		unless (defined $old_name) {
+			print STDERR "error: old name not found\n";
+			exit(1);
+		}
+		
+		unless ($old_name =~ /^$groupname/i) {
+			print STDERR "error: old groupname $groupname do not match ($old_name)\n";
+			exit(1);
+		}
+		
+		my ($name_suffix) = $old_name =~ /^$groupname\_(\S+)$/i;
+		
+		
+		unless (defined $name_suffix) {
+			print STDERR "error: name suffix not found\n";
+			exit(1);
+		}
+		
+		my $new_instance_name = $newgroupname.'_'.$name_suffix;
+		
+		
+		print "new instance name: $new_instance_name and new group: $newgroupname\n";
+		
+		#$server->{'metadata'}->{'owner'}
+		my $new_name_json = {	'server' => {'name'  => $new_instance_name}};
+		my $ret_hash = openstack_api('PUT', 'nova', '/servers/'.$server_id, $new_name_json);
+		#print Dumper($ret_hash);
+	
+		
+		
+		my $new_metadata_json ={'metadata' => {'group' => $newgroupname } } ;
+		$ret_hash = openstack_api('POST', 'nova', '/servers/'.$server_id.'/metadata', $new_metadata_json);
+		#print Dumper($ret_hash);
+		
+		
+		
+	}
+	
+	
+	
+	
+}
 
 sub get_ssh_key_file {
 	my $key_name = shift(@_);
@@ -149,6 +236,11 @@ sub get_ssh_key_file {
 sub parallell_job_new {
 	my $arg_hash = shift(@_);
 	
+	unless (defined $arg_hash->{"username"}) {
+		$arg_hash->{"username"} = $vm_user;
+	}
+	
+	
 	my $owner=$os_username;
 	my $group;
 	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"group"} && $arg_hash->{"group"} ne '' ) {
@@ -156,17 +248,32 @@ sub parallell_job_new {
 		$group = $arg_hash->{"group"};
 		$owner = $arg_hash->{'owner'} || $os_username;
 		
-		my $group_iplist = list_group($owner, $group);
+		#my $group_iplist = list_group($owner, $group);
+		my $group_iplist = ManageBulkInstances::get_instances( {	'owner' => $owner, 'group' => $arg_hash->{"group"}} );
+		
+		
 		$arg_hash->{"vmips_ref"} = $group_iplist;
 	}
 	
-	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"instance"} && $arg_hash->{"instance"} ne '') {
-		print "parallell_job_new: use instance\n";
+	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"instance_names"} && $arg_hash->{"instance_names"} ne '') {
+		print "parallell_job_new: use instance_names\n";
+		
+		
+		unless (defined $arg_hash->{"groupname"}) {
+			print STDERR "error: --groupname not defined\n";
+			exit(1);
+		}
 		
 		$owner = $arg_hash->{'owner'} || $os_username;
 		
-		my $instance_ip = get_instance_ip($arg_hash->{"instance"} , $owner);
-		$arg_hash->{"vmips_ref"} = [$instance_ip];
+		my @instances = split(',', $arg_hash->{"instance_names"});
+		if (@instances == 0 ) {
+			die;
+		}
+		
+		
+		my $instance_ips = get_instance_ip({'instance_names' => \@instances, 'owner' => $owner, 'groupname' => $arg_hash->{"groupname"}});
+		$arg_hash->{"vmips_ref"} = $instance_ips;
 	}
 
 	
@@ -866,14 +973,14 @@ sub json_request {
 	my $uri = shift(@_);
 	
 	my $json_query_hash;
-	if ($type eq 'POST') {
+	if ($type eq 'POST' || $type eq 'PUT') {
 		$json_query_hash = shift(@_);
 	}
 	
 	
 	
 	my $json;
-	if ($type eq 'POST') {
+	if ($type eq 'POST' || $type eq 'PUT') {
 		$json =  JSON::encode_json($json_query_hash ); #'{"username":"foo","password":"bar"}';
 		print "json: ".$json."\n";
 	}
@@ -890,7 +997,7 @@ sub json_request {
 		$req->header( 'User-Agent' => 'wolfgang' );
 	}
 	
-	if ($type eq 'POST') {
+	if ($type eq 'POST' || $type eq 'PUT') {
 		$req->content( $json );
 	}
 		
@@ -1032,7 +1139,7 @@ sub openstack_api {
 	
 	my $json_query_hash;
 	
-	if ($type eq 'POST') {
+	if ($type eq 'POST' || $type eq 'PUT') {
 		$json_query_hash = shift(@_);
 	}
 	
@@ -1814,12 +1921,20 @@ sub createSingleServer {
 		
 		unless (defined $create_servers) {
 			print STDERR "error: server creation failed\n";
+			if (defined $arg_hash->{"greedy"}) {
+				return (0);
+			}
 			$crashed_final = 1;
 			next MAINWHILE;
 		}
 			
 		$instance_id = $create_servers->{'server'}->{'id'};
 		unless (defined $instance_id) {
+			print STDERR "error: server creation failed, no id found\n";
+			if (defined $arg_hash->{"greedy"}) {
+				return (0);
+			}
+			
 			$crashed_final = 1;
 			next MAINWHILE;
 		}
@@ -2155,7 +2270,7 @@ sub createSingleServer {
 		last;
 	} # end while
 	
-	return ($return_value, \$return_data)
+	return ($return_value, \$return_data);
 }
 
 sub saveGroupInIpFile {
@@ -2166,8 +2281,9 @@ sub saveGroupInIpFile {
 	
 	my $owner = $arg_hash->{'owner'} || die;
 	
-	my $group_iplist = list_group($owner, $group);
-		
+	#my $group_iplist = list_group($owner, $group);
+	my $group_iplist = ManageBulkInstances::get_instances( {	'owner' => $owner, 'group' => $arg_hash->{"group"}} );
+	
 	saveIpToFile($arg_hash, $group_iplist);
 }
 
@@ -2623,19 +2739,47 @@ sub deletebulk_old {
 
 
 
-
 sub list_group_print {
 	my $arg_hash = shift(@_);
-	my $iplist_ref = ManageBulkInstances::list_group($arg_hash->{"owner"}||$os_username, $arg_hash->{"listgroup"});
+	
+	my $iplist_ref = ManageBulkInstances::get_instances( {
+		'owner' => $arg_hash->{"owner"}||$os_username,
+		'group' => $arg_hash->{"listgroup"}
+	} );
+	
+}
+
+sub list_ips_print {
+	my $arg_hash = shift(@_);
+	#my $iplist_ref = ManageBulkInstances::list_group($arg_hash->{"owner"}||$os_username, $arg_hash->{"listgroup"});
+	
+	my @instance_names = () ;
+	if (defined $arg_hash->{'instance_names'}) {
+		@instance_names = split(',', $arg_hash->{'instance_names'});
+	}
+	my @instance_ids = ();
+	if (defined $arg_hash->{'instance_ids'}) {
+		@instance_ids = split(',', $arg_hash->{'instance_ids'});
+	}
+	
+	my $iplist_ref = ManageBulkInstances::get_instances( {	'owner' => $arg_hash->{"owner"}||$os_username,
+																'instance_names' => \@instance_names,
+																'groupname' => $arg_hash->{"groupname"}, # only for instance_names
+																'instance_ids' => \@instance_ids,
+																'group' => $arg_hash->{"group"}
+	} );
+				
+	
+	
 	print "iplist=".join(',', @{$iplist_ref})."\n";
 	
 	return;
 }
 
-
-sub list_group {
+#deprecated !!
+sub list_group_old {
 	my ($owner, $group) = @_;
-	
+	die "deprecated list_group";
 	
 	unless (defined $owner) {
 		$owner = $os_username;
@@ -2657,10 +2801,13 @@ sub list_group {
 	}
 	
 	my @iplist=();
+	my @instance_name_list=();
+	my @instance_id_list=();
 	
 	foreach my $server (@{$servers_detail}) {
 		
-		my $instancename = $server->{'name'};  
+		my $instancename = $server->{'name'};
+		my $instance_id = $server->{'id'};
 		
 		my $server_owner = $server->{'metadata'}->{'owner'} || "";
 		my $server_group = $server->{'metadata'}->{'group'} || "";
@@ -2685,12 +2832,17 @@ sub list_group {
 				next;
 			}
 			push(@iplist, "10.0.".$ip);
+			push(@instance_name_list, $instancename);
+			push(@instance_id_list, $instance_id);
 			print "10.0.".$ip." ".$instancename."\n";
 			
 			
 		}
 		
 	}
+	
+	print "instance names:\n".join(',',@instance_name_list)."\n";
+	print "instance ids:\n".join(',',@instance_id_list)."\n";
 	
 	
 	if (@iplist ==0) {
@@ -2700,13 +2852,42 @@ sub list_group {
 	return \@iplist;
 }
 
-sub get_instance_ip {
-	my ($instance_name, $owner) = @_;
+#get instance IP(or id!) by instance_name, group or whatever
+sub get_instances {
+	my $arg_hash = shift(@_); # should not be command line hash
 	
+	my $instance_names = $arg_hash->{'instance_names'} || []; # array reference !
+	my $instance_ids = $arg_hash->{'instance_ids'} || []; # array reference !
 	
+	my $groupname = $arg_hash->{'groupname'}; # only verification when using instance names
+	
+	my $group = $arg_hash->{'group'};
+	
+	if (@{$instance_names} > 0) {
+		unless (defined $arg_hash->{'groupname'}) {
+			print STDERR "error: --groupname should be provided with --instance_names!\n";
+			exit(1);
+		}
+	}
+	
+	my $owner = $arg_hash->{'owner'};
 	unless (defined $owner) {
 		$owner = $os_username;
 	}
+	
+	# make hash for fast look-up
+	my $instance_names_hash={};
+	my $instance_ids_hash={};
+	
+	my $instance_names_duplicates ={};
+
+	foreach my $instance_name (@{$instance_names}) {
+		$instance_names_hash->{lc($instance_name)} = 1;
+	}
+	foreach my $instance_id (@{$instance_ids}) {
+		$instance_ids_hash->{$instance_id} = 1;
+	}
+	
 	
 	
 	my $servers_detail = openstack_api('GET', 'nova', '/servers/detail');
@@ -2719,50 +2900,91 @@ sub get_instance_ip {
 	
 	my @iplist=();
 	
+	my @instance_name_list=();
+	my @instance_id_list=();
+	
+	my $server_hash={};
+	
 	foreach my $server (@{$servers_detail}) {
 		
 		my $vm_instancename = $server->{'name'};
+		my $vm_instanceid = $server->{'id'};
 		
 		my $server_owner = $server->{'metadata'}->{'owner'} || "";
-		#my $server_group = $server->{'metadata'}->{'group'} || "";
+		my $server_group = $server->{'metadata'}->{'group'} || "";
 		
 		#if ($instancename =~ /^$groupname/ ) {
-		if (lc($owner) eq lc($server_owner) && lc($instance_name) eq lc($vm_instancename) ) {
-			
-			
-			
-			my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
-			unless (defined $addr_string) {
-				print Dumper($server)."\n";
-				print STDERR "warning: addr_string not defined !\n";
-				next;
-			}
-			
-			
-			my $ip;
-			($ip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
-			unless (defined $ip) {
-				print STDERR "warning: no internal IP found for instance  ($vm_instancename)...\n";
-				next;
-			}
-			push(@iplist, "10.0.".$ip);
-			print "10.0.".$ip." ".$vm_instancename."\n";
-			
-			
+		
+		my $match = 0;
+		
+		if (lc($owner) ne lc($server_owner)) {
+			next; # wrong owner
 		}
+		
+		
+		if (defined($instance_names_hash->{lc($vm_instancename)})  ) {
+			if (defined $instance_names_duplicates->{lc($vm_instancename)}) {
+				print STDERR "error: instance name $vm_instancename is not uniqe!!!\n";
+				exit(1);
+			}
+			$instance_names_duplicates->{lc($vm_instancename)}=1;
+			
+			$match=1; # name matches and is not duplicate
+		}
+			
+	
+		
+		if (defined($instance_ids_hash->{$vm_instanceid})  ) {
+			$match=1; # id matches (no group-check, only owner check here)
+		}
+		
+		
+		if (defined $group) {
+			if(lc($group) eq lc($server_group)) {
+				$match=1; # group matches
+			}
+		}
+		
+		if ($match==0) {
+			next; # no match at all
+		}
+		
+		my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
+		unless (defined $addr_string) {
+			print Dumper($server)."\n";
+			print STDERR "warning: addr_string not defined !\n";
+			next;
+		}
+		
+		
+		my $ip;
+		($ip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
+		unless (defined $ip) {
+			print STDERR "warning: no internal IP found for instance  ($vm_instancename)...\n";
+			next;
+		}
+		$ip = '10.0.'.$ip;
+		push(@iplist, $ip);
+		print $ip." ".$vm_instancename."\n";
+		
+		push(@instance_name_list, $vm_instancename);
+		push(@instance_id_list, $vm_instanceid);
+		$server_hash->{$vm_instanceid}->{'name'} = $vm_instancename;
+		$server_hash->{$vm_instanceid}->{'ip'} = $ip;
 		
 	}
 	
+	print "\ninstance_names=".join(',',@instance_name_list)."\n\n";
+	print "instance_ids=".join(',',@instance_id_list)."\n\n";
 	
 	if (@iplist ==0) {
-		print STDERR "error: no instance \"$instance_name\" for owner \"$owner\" found\n";
+		print STDERR "error: no instance found that matches your criteria for owner \"$owner\"\n";
 		exit(1);
 	}
 	
-	if (@iplist > 1) {
-		print STDERR "error: more than one instance with the name \"$instance_name\" for owner \"$owner\" found\n";
-		exit(1);
+	if (defined $arg_hash->{'return_hash'} ) {
+		return $server_hash;
 	}
-	
-	return shift(@iplist);
+		
+	return \@iplist;
 }

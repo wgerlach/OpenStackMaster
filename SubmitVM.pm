@@ -84,8 +84,11 @@ sub remote_perl_function {
 	my $tempbase = 'tempfile.dat';
 	
 	unless (-e $tempfilename) {
-		print STDERR "error: $tempfilename not found on local system\n";
-		exit(1);
+		sleep 3;
+		unless (-e $tempfilename) { # try it once again
+			print STDERR "error: $tempfilename not found on local system\n";
+			exit(1);
+		}
 	}
 	
 	myscp($scp, $tempfilename, $remote.':'.$tempbase);
