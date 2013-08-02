@@ -272,7 +272,7 @@ sub parallell_job_new {
 		}
 		
 		
-		my $instance_ips = get_instance_ip({'instance_names' => \@instances, 'owner' => $owner, 'groupname' => $arg_hash->{"groupname"}});
+		my $instance_ips = get_instances({'instance_names' => \@instances, 'owner' => $owner, 'groupname' => $arg_hash->{"groupname"}});
 		$arg_hash->{"vmips_ref"} = $instance_ips;
 	}
 
