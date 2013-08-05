@@ -2052,7 +2052,13 @@ sub createSingleServer {
 		my $remote = "$vm_user\@$instance_ip";
 		
 		# wait for real ssh connection
-		SubmitVM::connection_wait($ssh, $remote, 400, 0);
+		my $wait_result = SubmitVM::connection_wait($ssh, $remote, 400, 0);
+		
+		if ($wait_result == 0) {
+			$crashed_final = 1;
+			next MAINWHILE;
+		}
+		
 		sleep 5;
 		
 		#my $date = `date \"+\%Y\%m\%d \%T\"`;
