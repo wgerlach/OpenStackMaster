@@ -262,7 +262,7 @@ sub connection_wait {
 	my $ssh = shift(@_);
 	my $remote = shift(@_);
 	my $timeout = shift(@_);
-	
+	my $exit_on_undef = shift(@_);
 	
 	my $con_test = connection_test($ssh, $remote);
 	my $time = 0;
@@ -274,6 +274,15 @@ sub connection_wait {
 			print STDERR "error: connection test for $remote failed finally...\n";
 			print STDERR "command was: $command3\n";
 			print STDERR "returned: $connectiontest\n";
+			
+			if (defined $exit_on_undef) {
+				if ($exit_on_undef == 0) {
+					return 0; # error
+				}
+				
+			}
+			
+			
 			exit(1);
 		}
 		sleep 10;
@@ -284,7 +293,7 @@ sub connection_wait {
 	}
 	print "$remote ssh SUCCESS ...\n";
 	
-	return;
+	return 1; #success
 }
 
 sub check_screen {

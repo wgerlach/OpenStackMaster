@@ -85,7 +85,7 @@ our $options_basicactions = ["Nova actions",
 							"listgroup=s"	=> "list all instances in this group (must be owner)",		\&list_group_print,
 							"listips"		=> "list all instances by group or instance_names",			\&list_ips_print,
 							"savegroup=s"	=> "save group in ipfile",									\&saveGroupInIpFile,
-							"newgroupname=s" => "rename group, value is new name",						\&renameGroup
+							"newgroupname=s" => "rename group (will not change hostname!)",				\&renameGroup
 							] ;
 
 our $options_vmactions = ["VM actions",
@@ -2052,7 +2052,7 @@ sub createSingleServer {
 		my $remote = "$vm_user\@$instance_ip";
 		
 		# wait for real ssh connection
-		SubmitVM::connection_wait($ssh, $remote, 400);
+		SubmitVM::connection_wait($ssh, $remote, 400, 0);
 		sleep 5;
 		
 		#my $date = `date \"+\%Y\%m\%d \%T\"`;
