@@ -235,7 +235,7 @@ sub renameGroup {
 		
 		my $new_instance_name = $newgroupname;
 		
-		my $suffix_name_change = 0;
+		
 		unless (defined $arg_hash->{'onlygroupname'}) {
 			unless (defined $name_suffix) {
 				die;
@@ -255,7 +255,6 @@ sub renameGroup {
 				}
 				print STDERR "info: rename instance from $name_suffix to $new_suffix_name\n";
 				
-				$suffix_name_change = 1;
 				$name_suffix = $new_suffix_name;
 			}
 			
@@ -292,40 +291,40 @@ sub renameGroup {
 		}
 		
 				
-		if ($suffix_name_change == 1 ) {
+		
 			
-			my $key_name = $server->{'key_name'};
-			
-			unless (defined $key_name) {
-				print Dumper($server);
-				exit(1);
-			}
-			
-			my $sshkey = get_ssh_key_file($key_name);
-			
-			my $ssh = "ssh $ssh_options -i $sshkey";
-			my $scp = "scp $ssh_options -i $sshkey";
-			
-			my $server_address_private = $server->{'ip'};
-			
-			my $remote = "$vm_user\@$server_address_private";
-			
-			
-			my $newhostname = $new_instance_name;
-			$newhostname =~ s/[^0-9a-zA-Z]/-/g;
-			
-			
-			SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
-			
-			#change hostname
-			SubmitVM::remote_system($ssh, $remote, "sudo echo $newhostname > /etc/hostname");
-			
-			
-			SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
-			
-			SubmitVM::remote_system($ssh, $remote, "sudo service hostname start");
-			
+		my $key_name = $server->{'key_name'};
+		
+		unless (defined $key_name) {
+			print Dumper($server);
+			exit(1);
 		}
+		
+		my $sshkey = get_ssh_key_file($key_name);
+		
+		my $ssh = "ssh $ssh_options -i $sshkey";
+		my $scp = "scp $ssh_options -i $sshkey";
+		
+		my $server_address_private = $server->{'ip'};
+		
+		my $remote = "$vm_user\@$server_address_private";
+		
+		
+		my $newhostname = $new_instance_name;
+		$newhostname =~ s/[^0-9a-zA-Z]/-/g;
+		
+		
+		SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
+		
+		#change hostname
+		SubmitVM::remote_system($ssh, $remote, "sudo echo $newhostname > /etc/hostname");
+		
+		
+		SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
+		
+		SubmitVM::remote_system($ssh, $remote, "sudo service hostname start");
+			
+		
 	}
 	
 	
