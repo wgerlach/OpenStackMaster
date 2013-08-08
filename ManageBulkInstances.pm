@@ -164,6 +164,11 @@ sub renameGroup {
 	
 	print "would rename these guys=".join(',', keys(%$server_hash))."\n";
 	
+	#my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
+	
+	my %names_used;
+	# get list of used names and complain if groupname is already beeing used
+	
 	foreach my $server_id (keys(%$server_hash)) {
 		
 		my $old_name = $server_hash->{$server_id}->{'name'};
@@ -185,24 +190,142 @@ sub renameGroup {
 			exit(1);
 		}
 		
-		my $new_instance_name = $newgroupname.'_'.$name_suffix;
+		$names_used{lc($name_suffix)}=1;
+		
+	}
+	
+	my @nameslist;
+	if (defined $arg_hash->{"namelist"}) {
+		@nameslist = split(',', $arg_hash->{"namelist"});
+	} else {
+		@nameslist = @{$default_namelist};
+	}
+	
+	# remove names already used from nameslist;
+	my @tmp_names=();
+	for (my $i = 0; $i < @nameslist; $i++) {
+		unless (defined($names_used{lc($nameslist[$i])})) {
+			push(@tmp_names, $nameslist[$i]);
+		} 
+	}
+	@nameslist=@tmp_names;
+	
+	
+	
+	
+	my $suffix_name_counter = 1;
+	foreach my $server_id (keys(%$server_hash)) {
+		
+		
+		my $server = $server_hash->{$server_id};
+		
+		my $old_name = $server->{'name'};
+		unless (defined $old_name) {
+			print STDERR "error: old name not found\n";
+			exit(1);
+		}
+		
+		unless ($old_name =~ /^$groupname/i) {
+			print STDERR "error: old groupname $groupname do not match ($old_name)\n";
+			exit(1);
+		}
+		
+		my ($name_suffix) = $old_name =~ /^$groupname\_(\S+)$/i;
+		
+		
+		my $new_instance_name = $newgroupname;
+		
+		my $suffix_name_change = 0;
+		unless (defined $arg_hash->{'onlygroupname'}) {
+			unless (defined $name_suffix) {
+				die;
+			}
+			
+			if (defined($names_used{lc($name_suffix)}) || 1) {
+				#change name !
+				my $new_suffix_name;
+				if (@nameslist > 0) {
+					$new_suffix_name = shift(@nameslist);
+				} else {
+					$new_suffix_name = $suffix_name_counter;
+					while (defined($names_used{$new_suffix_name})) {
+						$suffix_name_counter++;
+						$new_suffix_name = $suffix_name_counter;
+					}
+				}
+				print STDERR "info: rename instance from $name_suffix to $new_suffix_name\n";
+				
+				$suffix_name_change = 1;
+				$name_suffix = $new_suffix_name;
+			}
+			
+			$new_instance_name .= '_'.$name_suffix;
+		}
+					
 		
 		
 		print "new instance name: $new_instance_name and new group: $newgroupname\n";
 		
-		#$server->{'metadata'}->{'owner'}
+		# chnage instance name
 		my $new_name_json = {	'server' => {'name'  => $new_instance_name}};
 		my $ret_hash = openstack_api('PUT', 'nova', '/servers/'.$server_id, $new_name_json);
 		#print Dumper($ret_hash);
 	
+		# confirm change
+		unless (defined($ret_hash->{'server'}->{'name'}) && lc($ret_hash->{'server'}->{'name'}) eq lc($new_instance_name)) {
+			print Dumper($ret_hash);
+			print STDERR "error: instance name not changed\n";
+			exit(1);
+		}
 		
-		
+				
+		#change metadata field group
 		my $new_metadata_json ={'metadata' => {'group' => $newgroupname } } ;
 		$ret_hash = openstack_api('POST', 'nova', '/servers/'.$server_id.'/metadata', $new_metadata_json);
 		#print Dumper($ret_hash);
 		
 		
+		unless (defined($ret_hash->{'metadata'}->{'group'}) && lc($ret_hash->{'metadata'}->{'group'}) eq lc($newgroupname)) {
+			print Dumper($ret_hash);
+			print STDERR "error: metadata field not changed\n";
+			exit(1);
+		}
 		
+				
+		if ($suffix_name_change == 1 ) {
+			
+			my $key_name = $server->{'key_name'};
+			
+			unless (defined $key_name) {
+				print Dumper($server);
+				exit(1);
+			}
+			
+			my $sshkey = get_ssh_key_file($key_name);
+			
+			my $ssh = "ssh $ssh_options -i $sshkey";
+			my $scp = "scp $ssh_options -i $sshkey";
+			
+			my $server_address_private = $server->{'ip'};
+			
+			my $remote = "$vm_user\@$server_address_private";
+			
+			
+			my $newhostname = $new_instance_name;
+			$newhostname =~ s/[^0-9a-zA-Z]/-/g;
+			
+			
+			SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
+			
+			#change hostname
+			SubmitVM::remote_system($ssh, $remote, "sudo echo $newhostname > /etc/hostname");
+			
+			
+			SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
+			
+			SubmitVM::remote_system($ssh, $remote, "sudo service hostname start");
+			
+		}
 	}
 	
 	
@@ -1545,15 +1668,6 @@ sub createNew {
 	
 	my $sshkey = get_ssh_key_file($key_name);
 	
-	
-	#my $sshkey = $arg_hash->{"sshkey"};
-	#unless (defined $sshkey) {
-	#	print "error: (createNew) sshkey undefined \n";
-	#	return undef;
-	#}
-
-	
-	#$ssh_options = "-o StrictHostKeyChecking=no -i $sshkey";
 	my $ssh = "ssh $ssh_options -i $sshkey";
 	my $scp = "scp $ssh_options -i $sshkey";
 	
@@ -1650,22 +1764,21 @@ sub createNew {
 	}
 	
 	my %names_used;
-	
+	# get list of used names and complain if groupname is already beeing used
 	foreach my $server (@{$servers_details->{'servers'}}) {
-		if ($server->{'name'} =~ /^$groupname/ ) {
-			if (defined $arg_hash->{"nogroupcheck"}) {
-				my ($old_name) = $server->{'name'} =~ /^$groupname\_(\S+)/;
-				unless (defined $old_name) {
-					print STDERR "group-specific instance name not found:".$server->{'name'}."\n";
-					exit(1);
-				}
-				$names_used{$old_name}=1;
-			} else {
+		if ($server->{'name'} =~ /^$groupname/i ) {
+			unless (defined $arg_hash->{"nogroupcheck"}) {
 				print "error: an instance with that groupname already exists, groupname: $groupname\n";
 				print "disable this error message with --nogroupcheck\n";
 				print "name: ".$server->{'name'}." ID: ".$server->{'id'}."\n";
 				return undef;
 			}
+			
+			my ($old_name) = $server->{'name'} =~ /^$groupname\_(\S+)/i;
+			if (defined $old_name) {
+				$names_used{$old_name}=1;
+			}
+
 		}
 	}
 	
@@ -1763,7 +1876,7 @@ sub createNew {
 		
 		foreach my $server (@{$servers_details->{'servers'}}) {
 			
-			if ($server->{'name'} =~ /^$groupname/ ) {
+			if ($server->{'name'} =~ /^$groupname/i ) {
 				
 				if ($server->{'status'} eq "ACTIVE") {
 					$active++;
@@ -1801,6 +1914,21 @@ sub createNew {
 	}
 	
 	return \@children_iplist;
+}
+
+
+sub getServerIP {
+	
+	my $server = shift(@_);
+	# get local IP of instance
+	my $server_address_private = $server->{'addresses'}->{'private'};
+
+	# not clear to me if 'private' or 'service'
+	unless(defined $server_address_private) {
+		$server_address_private = $server->{'addresses'}->{'service'};
+	}
+	
+	return $server_address_private;
 }
 
 sub createSingleServer {
@@ -1993,14 +2121,7 @@ sub createSingleServer {
 		# new server is ACTIVE now.
 		
 		
-		
-		# get local IP of instance
-		my $server_address_private = $new_server->{'server'}->{'addresses'}->{'private'};
-		
-		# not clear to me if 'private' or 'service'
-		unless(defined $server_address_private) {
-			$server_address_private = $new_server->{'server'}->{'addresses'}->{'service'};
-		}
+		my $server_address_private = getServerIP($new_server->{'server'});
 		
 		unless(defined $server_address_private) {
 			print Dumper($new_server);
@@ -2046,7 +2167,7 @@ sub createSingleServer {
 			#systemp('ssh-keygen', "-f \"$known_hosts\"", "-R ".$instance_ip); # I do not understand why this does not work.
 			
 			$lock->unlock();
-		} 
+		}
 		
 		
 		my $remote = "$vm_user\@$instance_ip";
@@ -2702,7 +2823,7 @@ sub deletebulk_old {
 		my $server = $id_to_server_hash->{$id};
 		my $instancename = $server->{'name'};
 		
-		if ($instancename =~ /^$groupname/ ) {
+		if ($instancename =~ /^$groupname/i ) {
 			
 			print "delete ".$instancename." (".$id.")\n";
 			
@@ -2977,6 +3098,7 @@ sub get_instances {
 		push(@instance_id_list, $vm_instanceid);
 		$server_hash->{$vm_instanceid}->{'name'} = $vm_instancename;
 		$server_hash->{$vm_instanceid}->{'ip'} = $ip;
+		$server_hash->{$vm_instanceid}->{'key_name'} = get_nested_hash_value($server, 'key_name');
 		
 	}
 	
