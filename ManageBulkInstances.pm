@@ -101,7 +101,7 @@ our $options_create_opts = ["Create options",
 							"groupname=s"	=> "required, name of the new group",						undef,
 							"nogroupcheck"	=> "use this to add VMs to existing group",					undef,
 							"onlygroupname"	=> "instance names all equal groupname",					undef,
-							"namelist"		=> "comma-separated list of names to choose from",			undef,
+							"namelist=s"	=> "comma-separated list of names to choose from",			undef,
 							"owner=s"		=> "optional, metadata information on VM, default os_username",	undef,
 							"disksize=i"	=> "in GB, creates, attaches, partitions and mounts volume",undef,
 							"wantip"		=> "external IP, only with count=1",						undef,
@@ -118,6 +118,7 @@ our $options_specify = [	"Specify existing VMs for actions and deletion",
 							#"ipfile=s"		=> "file containing list of ips with names",				undef,
 							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef,
 							"instance_names=s" => "VMs with these names, requires --groupname",			undef,
+							"instance_ids=s" => "VMs with these IDs, requires --groupname",			undef,
 							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
 							];
 
@@ -134,22 +135,9 @@ sub renameGroup {
 	}
 	my $newgroupname = $arg_hash->{'newgroupname'};
 	
-	my @instance_names = () ;
-	if (defined $arg_hash->{'instance_names'}) {
-		@instance_names = split(',', $arg_hash->{'instance_names'});
-	}
-	my @instance_ids = ();
-	if (defined $arg_hash->{'instance_ids'}) {
-		@instance_ids = split(',', $arg_hash->{'instance_ids'});
-	}
 	
-	my $server_hash = ManageBulkInstances::get_instances( {	'owner' => $arg_hash->{"owner"}||$os_username,
-		'instance_names' => \@instance_names,
-		'groupname' => $arg_hash->{"groupname"}, # only for instance_names
-		'instance_ids' => \@instance_ids,
-		'group' => $arg_hash->{"group"},
-		'return_hash' => 1
-	} );
+	
+	my $server_hash = ManageBulkInstances::get_instances_by_hash( $arg_hash , {'return_hash' => 1} );
 	
 	
 	
@@ -363,40 +351,17 @@ sub parallell_job_new {
 	}
 	
 	
-	my $owner=$os_username;
-	my $group;
-	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"group"} && $arg_hash->{"group"} ne '' ) {
-		print "parallell_job_new: use group: ".$arg_hash->{"group"}."\n";
-		$group = $arg_hash->{"group"};
-		$owner = $arg_hash->{'owner'} || $os_username;
+	my $owner=$arg_hash->{"os_username"}||$os_username;
+	my $group = $arg_hash->{"group"} || $arg_hash->{"groupname"};
+	
+	unless(defined($arg_hash->{"vmips_ref"}) { # TODO find a solution for vmips_ref. then remove the IP-to-key_name mapping
 		
-		#my $group_iplist = list_group($owner, $group);
-		my $group_iplist = ManageBulkInstances::get_instances( {	'owner' => $owner, 'group' => $arg_hash->{"group"}} );
-		
+		my $group_iplist = ManageBulkInstances::get_instances( $arg_hash );
 		
 		$arg_hash->{"vmips_ref"} = $group_iplist;
 	}
 	
-	if ((not defined ($arg_hash->{"vmips_ref"})) && defined $arg_hash->{"instance_names"} && $arg_hash->{"instance_names"} ne '') {
-		print "parallell_job_new: use instance_names\n";
-		
-		
-		unless (defined $arg_hash->{"groupname"}) {
-			print STDERR "error: --groupname not defined\n";
-			exit(1);
-		}
-		
-		$owner = $arg_hash->{'owner'} || $os_username;
-		
-		my @instances = split(',', $arg_hash->{"instance_names"});
-		if (@instances == 0 ) {
-			die;
-		}
-		
-		
-		my $instance_ips = get_instances({'instance_names' => \@instances, 'owner' => $owner, 'groupname' => $arg_hash->{"groupname"}});
-		$arg_hash->{"vmips_ref"} = $instance_ips;
-	}
+	
 
 	
 	
@@ -2465,32 +2430,63 @@ sub saveIpToFile {
 	
 }
 
+
+sub get_instances_by_hash {
+	
+	my ($arg_hash, $options) = shift(@_);
+	
+	
+	my @instance_names = ();
+	if (defined $arg_hash->{'instance_names'}) {
+		@instance_names = split(',', $arg_hash->{'instance_names'} );
+	}
+	
+	my @instance_ids = ();
+	if (defined $arg_hash->{'instance_ids'}) {
+		@instance_ids = split(',', $arg_hash->{'instance_ids'} );
+	}
+	
+	
+	my $own_hash = {
+		'owner' => $arg_hash->{"owner"}||$os_username,
+		'instance_names' => \@instance_names,
+		'groupname' => $arg_hash->{"groupname"}, # only for instance_names
+		'instance_ids' => \@instance_ids,
+		'group' => $arg_hash->{"group"}
+	};
+	
+	
+	if (defined $options) {
+		if (defined $options->{'return_hash'}) {
+			$own_hash->{'return_hash'} = $options->{'return_hash'};
+		}
+	}
+	
+	
+	# this also performs the group membership tests
+	my $server_hash = ManageBulkInstances::get_instances_by_hash( $own_hash );
+	
+	
+	return $server_hash;
+}
+
+
+
 # delete by owner/group !
 sub deletebulk {
 	
 	my $arg_hash = shift(@_);
 	
-	my $owner = $arg_hash->{"owner"} || $os_username;
-	
-	my $group = $arg_hash->{"group"};
-	
-	unless (defined $group) {
-		print STDERR "error: group not defined, refuse to delete only based on IP\n";
-		exit(1);
-	}
-	
-	if (length($group) < 4) {
-		print STDERR "error: groupname too short, at least 4 characters\n";
-		exit(1);
-	}
-	
-	print "group: $group\n";
+		
+	# this also performs the group membership tests
+	my $server_hash = ManageBulkInstances::get_instances_by_hash( $arg_hash, {'return_hash' => 1} );
 	
 	
-	my $volumes_detail = openstack_api('GET', 'volume', '/volumes/detail')->{'volumes'};
-	#print Dumper($volumes_detail)."\n";
 	
 	# get mapping instanceId_to_volumeId
+	my $volumes_detail = openstack_api('GET', 'volume', '/volumes/detail')->{'volumes'};
+	#print Dumper($volumes_detail)."\n";
+		
 	my $instanceId_to_volumeId;
 	foreach my $vol_obj (@{$volumes_detail}) {
 		my $vol_id = $vol_obj->{'id'};
@@ -2506,141 +2502,48 @@ sub deletebulk {
 	}
 	
 	
-	my $servers_detail = openstack_api('GET', 'nova', '/servers/detail');
-	if (defined $servers_detail->{'servers'}) {
-		$servers_detail = $servers_detail->{'servers'};
-	} else {
-		die;
-	}
-	
-	#get more mappings
-	#my $ip_to_server_hash;
-	my $id_to_server_hash;
-	my @id_list=();
-	
-	foreach my $server (@{$servers_detail}) {
+	# delete instances with volumes and IPs , TODO: testing
+	my $delcount =0;
+	foreach my $id (keys(%$server_hash)) {
 		
-		
-		my $server_owner = $server->{'metadata'}->{'owner'} || "";
-		my $server_group = $server->{'metadata'}->{'group'} || "";
-		
-		if ($owner ne $server_owner || $group ne $server_group ) {
-			next;
-		}
-		
-		
-		my $id = $server->{'id'};
-		
-		
-		unless (defined $id) {
-			print STDERR "warning: id not defined for server\n";
-			next;
-		}
-		
+		my $server = $server_hash->{$id};
+		my $instancename = $server->{'name'};
 		if (lc($server->{'status'}) eq "error") {
 			print STDERR "warning: server is in error status, name=".$server->{'name'}." id=$id\n";
 			next;
 		}
-		
-		push(@id_list, $id);
-		$id_to_server_hash->{$id} = $server;
-		
-		#my $instancename = $server->{'name'};
-		
-		
-		# get local IP of instance
-		my $server_address_private = $server->{'addresses'}->{'private'};
-		
-		# not clear to me if 'private' or 'service'
-		unless(defined $server_address_private) {
-			$server_address_private = $server->{'addresses'}->{'service'};
-		}
-		
-		
-		unless(defined $server_address_private) {
-			print STDERR "warning: server_address_private not defined, name=".$server->{'name'}."\n";
-			next;
-		}
-		
-		my @private_addresses = @{$server_address_private};
-		
-		if (@private_addresses == 0) {
-			print STDERR "warning: private_addresses == 0 \n";
-			next;
-		}
-		
-		
-		my $instance_ip_hash = $private_addresses[0];
-		
-		if ($instance_ip_hash->{'version'} ne '4') {
-			print STDERR "warning: instance_ip_hash->\{version\} ne 4\n";
-			next;
-		}
-		
-		my $ip = $instance_ip_hash->{'addr'};
-		
-		unless ($ip =~ /^10\.0\.\d+\.\d+$/) {
-			print STDERR "warning: ip format not ok \"$ip\"\n";
-			next;
-		}
-		
-		#if (defined $ip) {
-			#$ip_to_server_hash->{$ip} = $server;
-			
-		#} else {
-		#	print STDERR "warning: ip not defined\n";
-		#	next;
-		#}
-	}
-	
-	my $delcount =0;
-	
-	
-	
-	foreach my $id (@id_list) {
-		
-		my $server = $id_to_server_hash->{$id};
-		my $instancename = $server->{'name'};
-		
 		unless (defined $instancename) {
 			print "warning: name of server with id $id not defined\n";
 			next;
 		}
 		
-		if ($instancename =~ /^$group/ ) {
+		
 			
-			print "delete ".$instancename." (".$id.")\n";
-			
-			#search IP
-			my $oldip = get_nested_hash_value($server, 'addresses', 'services', 0 , 'addr');
-			
-			
-			#search volume
-			my $volume_id = $instanceId_to_volumeId->{$id};
-			
-			
-			
-			# delete instance
-			my $delete_result = openstack_api('DELETE', 'nova', '/servers/'.$id, { 'server_id' => $id});
-			$delcount++;
-			
-			# delete ip
-			if (defined $oldip) {
-				print "delete ip $oldip of instance ".$instancename." (".$id.")\n";
-				delete_IP($oldip);
-			}
-			
-			#delete volume
-			if (defined $volume_id) {
-				print "delete volume $volume_id of instance ".$instancename." (".$id.")\n";
-				delete_volume($volume_id);
-			}
-			
-			
-			
-			
-		} else {
-			print STDERR "error: prefix name does not match groupname !?\n";
+		print "delete ".$instancename." (".$id.")\n";
+		
+		#search IP
+		my $oldip = get_nested_hash_value($server, 'addresses', 'services', 0 , 'addr');
+		
+		
+		#search volume
+		my $volume_id = $instanceId_to_volumeId->{$id};
+		
+		
+		
+		# delete instance
+		my $delete_result = openstack_api('DELETE', 'nova', '/servers/'.$id, { 'server_id' => $id});
+		$delcount++;
+		
+		# delete ip
+		if (defined $oldip) {
+			print "delete ip $oldip of instance ".$instancename." (".$id.")\n";
+			delete_IP($oldip);
+		}
+		
+		#delete volume
+		if (defined $volume_id) {
+			print "delete volume $volume_id of instance ".$instancename." (".$id.")\n";
+			delete_volume($volume_id);
 		}
 		
 		
@@ -2877,25 +2780,10 @@ sub list_group_print {
 
 sub list_ips_print {
 	my $arg_hash = shift(@_);
-	#my $iplist_ref = ManageBulkInstances::list_group($arg_hash->{"owner"}||$os_username, $arg_hash->{"listgroup"});
-	
-	my @instance_names = () ;
-	if (defined $arg_hash->{'instance_names'}) {
-		@instance_names = split(',', $arg_hash->{'instance_names'});
-	}
-	my @instance_ids = ();
-	if (defined $arg_hash->{'instance_ids'}) {
-		@instance_ids = split(',', $arg_hash->{'instance_ids'});
-	}
-	
-	my $iplist_ref = ManageBulkInstances::get_instances( {	'owner' => $arg_hash->{"owner"}||$os_username,
-																'instance_names' => \@instance_names,
-																'groupname' => $arg_hash->{"groupname"}, # only for instance_names
-																'instance_ids' => \@instance_ids,
-																'group' => $arg_hash->{"group"}
-	} );
+			
+	my $iplist_ref = ManageBulkInstances::get_instances_by_hash( $arg_hash );
 				
-	
+
 	
 	print "iplist=".join(',', @{$iplist_ref})."\n";
 	
@@ -3095,9 +2983,11 @@ sub get_instances {
 		
 		push(@instance_name_list, $vm_instancename);
 		push(@instance_id_list, $vm_instanceid);
-		$server_hash->{$vm_instanceid}->{'name'} = $vm_instancename;
+		$server_hash->{$vm_instanceid} = $server;
+		#$server_hash->{$vm_instanceid}->{'name'} = $vm_instancename;
 		$server_hash->{$vm_instanceid}->{'ip'} = $ip;
-		$server_hash->{$vm_instanceid}->{'key_name'} = get_nested_hash_value($server, 'key_name');
+		#$server_hash->{$vm_instanceid}->{'key_name'} = get_nested_hash_value($server, 'key_name');
+		#$server_hash->{$vm_instanceid}->{'status'} = get_nested_hash_value($server, 'status');
 		
 	}
 	
