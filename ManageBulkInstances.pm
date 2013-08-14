@@ -354,7 +354,7 @@ sub parallell_job_new {
 	my $owner=$arg_hash->{"os_username"}||$os_username;
 	my $group = $arg_hash->{"group"} || $arg_hash->{"groupname"};
 	
-	unless(defined($arg_hash->{"vmips_ref"}) { # TODO find a solution for vmips_ref. then remove the IP-to-key_name mapping
+	unless(defined($arg_hash->{"vmips_ref"})) { # TODO find a solution for vmips_ref. then remove the IP-to-key_name mapping
 		
 		my $group_iplist = ManageBulkInstances::get_instances( $arg_hash );
 		
