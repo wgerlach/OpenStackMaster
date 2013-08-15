@@ -2464,7 +2464,7 @@ sub get_instances_by_hash {
 	
 	
 	# this also performs the group membership tests
-	my $server_hash = ManageBulkInstances::get_instances_by_hash( $own_hash );
+	my $server_hash = ManageBulkInstances::get_instances( $own_hash );
 	
 	
 	return $server_hash;
