@@ -2433,7 +2433,7 @@ sub saveIpToFile {
 
 sub get_instances_by_hash {
 	
-	my ($arg_hash, $options) = shift(@_);
+	my ($arg_hash, $options) = @_;
 	
 	
 	my @instance_names = ();
