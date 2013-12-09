@@ -2655,7 +2655,7 @@ sub reboot {
 		
 		
 		# reboot instance
-		my $reboot_result = openstack_api('POST', 'nova', '/servers/'.$id.'/action', { 'reboot' => {"type" : $reboot_type}});
+		my $reboot_result = openstack_api('POST', 'nova', '/servers/'.$id.'/action', { 'reboot' => {"type" => $reboot_type } } );
 		
 				
 		
