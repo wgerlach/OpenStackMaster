@@ -2619,7 +2619,7 @@ sub reboot {
 	my $arg_hash = shift(@_);
 	
 	
-	$reboot_type = $arg_hash->{"reboot"};
+	my $reboot_type = $arg_hash->{"reboot"};
 	
 	unless (defined $reboot_type) {
 		die "error: reboot type not defined. soft/hard";
