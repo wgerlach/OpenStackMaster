@@ -81,6 +81,7 @@ our $options_basicactions = ["Nova actions",
 							"create=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHash,
 #TODO "createtemp=i"		=> "create i new instances from snapshot/image" ,			\&createAndAddToHashAndDelete, # perl object with destroyer
 							"delete"		=> "use with --group,ipfile or iplist",						\&deletebulk,
+							"reboot=s"		=> "reboot all instances, \"soft\" or \"hard\"",				\&reboot,
 							"info"			=> "list all instances, volumes, flavors...",				\&info,
 							"listgroup=s"	=> "list all instances in this group (must be owner)",		\&list_group_print,
 							"listips"		=> "list all instances by group or instance_names",			\&list_ips_print,
@@ -110,9 +111,7 @@ our $options_create_opts = ["Create options",
 							"greedy"		=> "continue with VM creation, even if some fail",			undef
 							];
 
-our $options_delete_opts = ["Delete options",
-							"noownercheck"	=> "disables owner check",									undef
-							];
+
 
 our $options_specify = [	"Specify existing VMs for actions and deletion",
 							#"ipfile=s"		=> "file containing list of ips with names",				undef,
@@ -122,7 +121,11 @@ our $options_specify = [	"Specify existing VMs for actions and deletion",
 							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
 							];
 
-our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_delete_opts, $options_specify);
+our $options_other_opts = ["Other options",
+							"noownercheck"	=> "disables owner check",									undef
+];
+
+our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_other_opts, $options_specify);
 
 ##############################
 # subroutines
@@ -279,39 +282,40 @@ sub renameGroup {
 		}
 		
 				
-		
+		if (0) { # ugly
 			
-		my $key_name = $server->{'key_name'};
-		
-		unless (defined $key_name) {
-			print Dumper($server);
-			exit(1);
+			my $key_name = $server->{'key_name'};
+			
+			unless (defined $key_name) {
+				print Dumper($server);
+				exit(1);
+			}
+			
+			my $sshkey = get_ssh_key_file($key_name);
+			
+			my $ssh = "ssh $ssh_options -i $sshkey";
+			my $scp = "scp $ssh_options -i $sshkey";
+			
+			my $server_address_private = $server->{'ip'};
+			
+			my $remote = "$vm_user\@$server_address_private";
+			
+			
+			my $newhostname = $new_instance_name;
+			$newhostname =~ s/[^0-9a-zA-Z]/-/g;
+			
+			
+			SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
+			
+			#change hostname
+			SubmitVM::remote_system($ssh, $remote, "sudo echo $newhostname > /etc/hostname");
+			
+			
+			SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
+			
+			SubmitVM::remote_system($ssh, $remote, "sudo service hostname start");
+			
 		}
-		
-		my $sshkey = get_ssh_key_file($key_name);
-		
-		my $ssh = "ssh $ssh_options -i $sshkey";
-		my $scp = "scp $ssh_options -i $sshkey";
-		
-		my $server_address_private = $server->{'ip'};
-		
-		my $remote = "$vm_user\@$server_address_private";
-		
-		
-		my $newhostname = $new_instance_name;
-		$newhostname =~ s/[^0-9a-zA-Z]/-/g;
-		
-		
-		SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
-		
-		#change hostname
-		SubmitVM::remote_system($ssh, $remote, "sudo echo $newhostname > /etc/hostname");
-		
-		
-		SubmitVM::remote_system($ssh, $remote, "cat /etc/hostname");
-		
-		SubmitVM::remote_system($ssh, $remote, "sudo service hostname start");
-			
 		
 	}
 	
@@ -346,68 +350,79 @@ sub get_ssh_key_file {
 sub parallell_job_new {
 	my $arg_hash = shift(@_);
 	
+	print "parallell_job_new: ".join(',', keys(%$arg_hash))."\n";
+	
+	my $server_hash = ManageBulkInstances::get_instances_by_hash( $arg_hash , {'return_hash' => 1} );
+	
+	
 	unless (defined $arg_hash->{"username"}) {
 		$arg_hash->{"username"} = $vm_user;
 	}
 	
 	
-	my $owner=$arg_hash->{"os_username"}||$os_username;
-	my $group = $arg_hash->{"group"} || $arg_hash->{"groupname"};
+	#my $owner=$arg_hash->{"os_username"}||$os_username;
+	#my $group = $arg_hash->{"group"} || $arg_hash->{"groupname"};
 	
-	unless(defined($arg_hash->{"vmips_ref"})) { # TODO find a solution for vmips_ref. then remove the IP-to-key_name mapping
+	#unless(defined($arg_hash->{"vmips_ref"})) { # TODO find a solution for vmips_ref. then remove the IP-to-key_name mapping
 		
-		my $group_iplist = ManageBulkInstances::get_instances( $arg_hash );
+	#	my $group_iplist = ManageBulkInstances::get_instances( $arg_hash );
 		
-		$arg_hash->{"vmips_ref"} = $group_iplist;
-	}
+	#	$arg_hash->{"vmips_ref"} = $group_iplist;
+	#}
 	
 	
 
-	
+	my @iplist = ();
 	
 	#get IP-to-key_name mapping:
 	my $ip_to_key_mapping={};
 	my $key_name_to_key_file={};
-	my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
-	foreach my $server (@{$servers_details->{'servers'}}) {
+	#my $servers_details = openstack_api('GET', 'nova', '/servers/detail');
+	#foreach my $server (@{$servers_details->{'servers'}}) {
+	foreach my $server_id (keys(%$server_hash)) {
+		my $server = $server_hash->{$server_id};
 		my $key_name = $server->{'key_name'};
 		unless (defined $key_name) {
-			next;
+			die;
 		}
-		my $vm_owner = $server->{'metadata'}->{'owner'};
-		my $vm_group = $server->{'metadata'}->{'group'};
+		my $ip = $server->{'ip'};
+		unless (defined $ip) {
+			die;
+		}
+		push(@iplist, $ip);
+		#my $vm_owner = $server->{'metadata'}->{'owner'};
+		#my $vm_group = $server->{'metadata'}->{'group'};
 		
-		unless (defined $vm_owner) {
-			next;
-		}
+		#unless (defined $vm_owner) {
+		#	next;
+		#}
 		
-		unless (defined $vm_group) {
-			next;
-		}
+		#unless (defined $vm_group) {
+		#	next;
+		#}
 		
-		unless (lc($vm_owner) eq lc($owner)) {
-			next;
-		}
-		if (defined $group) {
-			unless (lc($vm_group) eq lc($group)) {
-				next;
-			}
-		}
+		#unless (lc($vm_owner) eq lc($owner)) {
+		#	next;
+		#}
+		#if (defined $group) {
+		#	unless (lc($vm_group) eq lc($group)) {
+		#		next;
+		#	}
+		#}
 		
 		$key_name_to_key_file->{$key_name}=1;
 		
-		my @networks;
-		foreach my $address (@{$server->{'addresses'}->{'service'}}) {
-			$ip_to_key_mapping->{$address->{'addr'}} = $key_name;
-		}
+		#my @networks;
+		#foreach my $address (@{$server->{'addresses'}->{'service'}}) {
+		#	$ip_to_key_mapping->{$address->{'addr'}} = $key_name;
+		#}
+		$ip_to_key_mapping->{$ip} = $key_name;
 		
 	}
 	
 	foreach my $key_name (keys($key_name_to_key_file)) {
 		#print "got key: $key_name\n";
-		
 	
-				
 		$key_name_to_key_file->{$key_name} = get_ssh_key_file($key_name);
 		#print "B\n";
 	}
@@ -422,11 +437,17 @@ sub parallell_job_new {
 	
 	#exit(0);
 	
+	if (@iplist == 0 ) {
+		print STDERR "error: (parallell_job_new) iplist empty\n";
+		exit(1);
+	}
+	
 	my $result = SubmitVM::parallell_job_new(
-		{	"vmips_ref" => $arg_hash->{"vmips_ref"},
+		{	"vmips_ref" => \@iplist, #$arg_hash->{"vmips_ref"},
 			"vmargs_ref" => $arg_hash->{"vmargs_ref"},
 			"function_ref" => $arg_hash->{"function_ref"},
-			"ip_to_keyfile" => $ip_to_keyfile
+			"ip_to_keyfile" => $ip_to_keyfile,
+			"username" => $arg_hash->{"username"}
 		}
 	);
 	
@@ -574,6 +595,8 @@ sub getOptionsHash {
 		die;
 	}
 	
+	print Dumper($arg_hash_ref)."\n";
+	
 	return;
 }
 
@@ -634,7 +657,10 @@ sub read_config_file {
 					my @iparray = split(/,/ , $config_value);
 					$arg_hash->{$config_key} = \@iparray;
 				} else {
-					$arg_hash->{$config_key} = $config_value;
+					unless (defined $arg_hash->{$config_key}) {
+						print "write configuration: ".$config_key." ".$config_value."\n";
+						$arg_hash->{$config_key} = $config_value;
+					}
 				}
 				print "use configuration: ".$line."\n";
 			#}
@@ -1553,8 +1579,9 @@ sub createAndAddToHash {
 	}
 	
 	$arg_hash->{"iplist"} = $iplist_ref;
-	
-	$arg_hash->{"group"} = $arg_hash->{"groupname"};
+	unless (defined $arg_hash->{"group"}) {
+		$arg_hash->{"group"} = $arg_hash->{"groupname"};
+	}
 	return;
 }
 
@@ -1570,6 +1597,7 @@ sub createAndAddToHash {
 sub createNew {
 	my $arg_hash = shift(@_);
 	
+	print "createNew\n";
 	
 	my $flavor_name = $arg_hash->{"flavor_name"};
 	my $count = $arg_hash->{"create"} || die "error: create (count) not defined\n";
@@ -1686,7 +1714,7 @@ sub createNew {
 	# shuffle name if module is installed
 	my $module = "List::Util";
 	if (try_load($module)) {
-		print "loaded\n";
+		#print "loaded\n";
 		#print join(",", @nameslist)."\n";
 		@nameslist = List::Util::shuffle(@nameslist);
 		#print join(",", @nameslist)."\n";
@@ -1711,7 +1739,7 @@ sub createNew {
 			$flavor_id=$flavor_obj->{'id'};
 		} else {
 			print STDERR "error: flavor_name \"".$flavor_name."\" is not unique\n";
-			exit(1);
+			return undef;
 		}
 		
 		unless (defined $flavor_id) {
@@ -1721,7 +1749,9 @@ sub createNew {
 		
 	}
 	$arg_hash->{"flavor_id"} = $flavor_id;
-		
+	
+	print "flavor_id: $flavor_id\n";
+	
 	if (length($groupname) <= 4) {
 		print STDERR "error: name \"$groupname\" too short\n";
 		return undef;
@@ -1763,7 +1793,7 @@ sub createNew {
 	}
 	
 	my $max_threads = 8;
-	
+	print "create Parallel::ForkManager object\n";
 	my $manager = new Parallel::ForkManager( ($max_threads, $count)[$max_threads > $count] ); # min 5 $count
 	
 	my @children_iplist=();
@@ -1815,6 +1845,7 @@ sub createNew {
 	}
 	);
 	
+	print "start $count thread".($count==1)?'':'s'."\n";
 	for (my $i=0 ; $i < $count; $i++) {
 		
 		########## CHILD START ############
@@ -2431,9 +2462,30 @@ sub saveIpToFile {
 }
 
 
+sub transferSubHash {
+	my $old_hash = shift (@_);
+	my $new_hash = shift (@_);
+	
+	my @keys = @_;
+	
+	
+	foreach my $key (@keys) {
+		#print "key: $key\n";
+		if (defined $old_hash->{$key}) {
+			#print "copy key\n";
+			$new_hash->{$key} = $old_hash->{$key};
+		}
+	}
+	
+
+}
+
+
 sub get_instances_by_hash {
 	
 	my ($arg_hash, $options) = @_;
+	
+	print "get_instances_by_hash: ".join(',', keys(%$arg_hash))."\n";
 	
 	
 	my @instance_names = ();
@@ -2446,20 +2498,27 @@ sub get_instances_by_hash {
 		@instance_ids = split(',', $arg_hash->{'instance_ids'} );
 	}
 	
-	
+		
 	my $own_hash = {
 		'owner' => $arg_hash->{"owner"}||$os_username,
-		'instance_names' => \@instance_names,
-		'groupname' => $arg_hash->{"groupname"}, # only for instance_names
-		'instance_ids' => \@instance_ids,
-		'group' => $arg_hash->{"group"}
+		'username' => $arg_hash->{"username"} || $vm_user
 	};
 	
 	
+	transferSubHash($arg_hash, $own_hash, 'group', 'groupname');
+	
+	
+	if (@instance_names > 0) {
+		$own_hash->{'instance_names'} =  \@instance_names ;
+	}
+	
+	if (@instance_ids > 0) {
+		$own_hash->{'instance_ids'} =  \@instance_ids ;
+	}
+	
+	
 	if (defined $options) {
-		if (defined $options->{'return_hash'}) {
-			$own_hash->{'return_hash'} = $options->{'return_hash'};
-		}
+		transferSubHash($options, $own_hash, 'return_hash');
 	}
 	
 	
@@ -2551,6 +2610,56 @@ sub deletebulk {
 	
 	
 	return $delcount;
+	
+	
+}
+
+sub reboot {
+	
+	my $arg_hash = shift(@_);
+	
+	
+	$reboot_type = $arg_hash->{"reboot"};
+	
+	unless (defined $reboot_type) {
+		die "error: reboot type not defined. soft/hard";
+	}
+	
+	unless ($reboot_type eq "soft" || $reboot_type eq "hard") {
+			die "reboot type should be \"soft\" or \"hard\", got: $reboot_type";
+	}
+	
+	
+	# this also performs the group membership tests
+	my $server_hash = ManageBulkInstances::get_instances_by_hash( $arg_hash, {'return_hash' => 1} );
+	
+	
+	
+	foreach my $id (keys(%$server_hash)) {
+		
+		my $server = $server_hash->{$id};
+		my $instancename = $server->{'name'};
+		#if (lc($server->{'status'}) eq "error") {
+		#	print STDERR "warning: server is in error status, name=".$server->{'name'}." id=$id\n";
+		#	next;
+		#}
+		unless (defined $instancename) {
+			print "warning: name of server with id $id not defined\n";
+			next;
+		}
+		
+		
+		
+		#print "delete ".$instancename." (".$id.")\n";
+		
+		
+		
+		# reboot instance
+		my $reboot_result = openstack_api('POST', 'nova', '/servers/'.$id.'/action', { 'reboot' => {"type" : $reboot_type}});
+		
+				
+		
+	}
 	
 	
 }
@@ -2827,7 +2936,7 @@ sub list_group_old {
 		my $server_group = $server->{'metadata'}->{'group'} || "";
 		
 		#if ($instancename =~ /^$groupname/ ) {
-		if (lc($owner) eq lc($server_owner) && lc($group) eq lc($server_group) ) {
+		if ( (lc($owner) eq lc($server_owner)) && lc($group) eq lc($server_group) ) {
 			
 						
 			
@@ -2870,6 +2979,9 @@ sub list_group_old {
 sub get_instances {
 	my $arg_hash = shift(@_); # should not be command line hash
 	
+	
+	print "get_instances: ".join(',', keys(%$arg_hash))."\n";
+	
 	my $instance_names = $arg_hash->{'instance_names'} || []; # array reference !
 	my $instance_ids = $arg_hash->{'instance_ids'} || []; # array reference !
 	
@@ -2878,8 +2990,9 @@ sub get_instances {
 	my $group = $arg_hash->{'group'};
 	
 	if (@{$instance_names} > 0) {
-		unless (defined $arg_hash->{'groupname'}) {
+		unless (defined $groupname) {
 			print STDERR "error: --groupname should be provided with --instance_names!\n";
+			print join(',',keys(%$arg_hash))."\n";
 			exit(1);
 		}
 	}
@@ -2931,7 +3044,7 @@ sub get_instances {
 		
 		my $match = 0;
 		
-		if (lc($owner) ne lc($server_owner)) {
+		if ((lc($owner) ne lc($server_owner)) && !defined $arg_hash->{"noownercheck"}) {
 			next; # wrong owner
 		}
 		
