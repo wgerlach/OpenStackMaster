@@ -46,18 +46,30 @@ sub ubuntu_aptget_update {
 	return;
 }
 
-#example": deploy_software($ssh, "root" => 0, "target" => "/home/ubuntu", "argline" => "mypackage==1.0.0(packagearguments)")
+#example": deploy_software($ssh, "root" => 0, "target" => "/home/ubuntu", "packages" => ["mypackage==1.0.0(packagearguments)", ...])
 sub deploy_software {
 	my $ssh = shift(@_);
 	my $remote = shift(@_);
+	
 	my %h = @_;
+	
+	print "have ssh: $ssh STOP\n";
+	print "have remote: $remote STOP\n";
+	print "have hash: ".split(',', keys(%$h))."\n";
+
 	
 	my $as_root = $h{'root'};
 	my $target = $h{'target'};
-	my $argline = $h{'argline'} || die;
+	my $packages_ref = $h{'packages'} || die "error: deploy_software is missing packages";
+	my @packages = @{$packages_ref};
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo apt-get install cpanminus ; sudo cpanm install JSON Config::IniFiles");
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl");
+	print "install ".@packages." packages:\n";
+	print "install: ".join(',', @packages);
+	
+	lib_needed($ssh, $remote, "git make build-essential cpanminus python-setuptools python-dev checkinstall");
+	
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm install JSON Config::IniFiles");
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl && chmod +x deploy_software.pl");
 	
 	
 	my $deploy_command = "./deploy_software.pl ";
@@ -68,6 +80,11 @@ sub deploy_software {
 	
 	if (defined $target) {
 		$deploy_command .= "--target=$target ";
+	}
+	
+	my $argline = "";
+	foreach my $p (@packages) {
+		$argline .= " '".$p."'";
 	}
 	
 	$deploy_command .= $argline;
@@ -219,7 +236,7 @@ sub lib_needed {
 	my $package_name = shift(@_);
 	
 	
-	remote_system($ssh, $remote, "sudo apt-get -y -q install $package_name") || return 0;
+	remote_system($ssh, $remote, "sudo apt-get  --force-yes -y -q install $package_name") || return 0;
 	
 	return 1;
 }
