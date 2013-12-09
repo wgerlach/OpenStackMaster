@@ -49,15 +49,15 @@ sub ubuntu_aptget_update {
 #example": deploy_software($ssh, "root" => 0, "target" => "/home/ubuntu", "argline" => "mypackage==1.0.0(packagearguments)")
 sub deploy_software {
 	my $ssh = shift(@_);
-	#my $scp = shift(@_);
+	my $remote = shift(@_);
 	my %h = @_;
 	
 	my $as_root = $h{'root'};
 	my $target = $h{'target'};
 	my $argline = $h{'argline'} || die;
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules' , "sudo apt-get install cpanminus ; sudo cpanm install JSON Config::IniFiles");
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript' , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl");
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo apt-get install cpanminus ; sudo cpanm install JSON Config::IniFiles");
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl");
 	
 	
 	my $deploy_command = "./deploy_software.pl ";
@@ -72,7 +72,7 @@ sub deploy_software {
 	
 	$deploy_command .= $argline;
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploy' , "cd && ".$deploy_command);
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploy', 10 , "cd && ".$deploy_command);
 	
 	return;
 }

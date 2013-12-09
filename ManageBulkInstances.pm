@@ -130,6 +130,10 @@ our @options_all = ($options_basicactions, $options_vmactions, $options_create_o
 ##############################
 # subroutines
 
+sub deploy {
+	SubmitVM::deploy(@_);
+}
+
 sub renameGroup {
 	my $arg_hash = shift(@_);
 	
