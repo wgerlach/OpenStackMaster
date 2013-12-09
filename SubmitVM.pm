@@ -46,6 +46,36 @@ sub ubuntu_aptget_update {
 	return;
 }
 
+#example": deploy_software($ssh, "root" => 0, "target" => "/home/ubuntu", "argline" => "mypackage==1.0.0(packagearguments)")
+sub deploy_software {
+	my $ssh = shift(@_);
+	#my $scp = shift(@_);
+	my %h = @_;
+	
+	my $as_root = $h{'root'};
+	my $target = $h{'target'};
+	my $argline = $h{'argline'} || die;
+	
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules' , "sudo apt-get install cpanminus ; sudo cpanm install JSON Config::IniFiles");
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript' , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl");
+	
+	
+	my $deploy_command = "./deploy_software.pl ";
+	
+	if (defined($as_root) && ($as_root == 1)) {
+		$deploy_command = "sudo ./deploy_software.pl --root ";
+	}
+	
+	if (defined $target) {
+		$deploy_command .= "--target=$target ";
+	}
+	
+	$deploy_command .= $argline;
+	
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploy' , "cd && ".$deploy_command);
+	
+	return;
+}
 
 sub setDate {
 	my $ssh = shift(@_);
@@ -219,7 +249,7 @@ sub execute_remote_command_in_screen_and_wait {
 	my $poll_time = shift(@_);
 	my $remote_command = shift(@_);
 	
-	my $command = "$ssh $remote screen -d -m -S $screen_name \"bash -c \\\"$remote_command ; echo \$?\\\"\"";
+	my $command = "$ssh $remote screen -d -m -L -S $screen_name \"bash -c \\\"$remote_command ; echo \$?\\\"\"";
 	
 	print $command."\n";
 	system($command) == 0
@@ -612,7 +642,7 @@ sub parallell_job_new {
 			my $func_exit_code=0;# good
 			my $func_ret;
 			eval {
-				$func_ret = &$function_ref($ip, $parameter, $ssh_options);
+				$func_ret = &$function_ref($ip, $parameter, $ssh_options, $args_hash->{"username"});
 			};
 			if($@) {
                 warn "caught error: ".$@;
