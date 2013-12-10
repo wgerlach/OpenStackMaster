@@ -60,11 +60,13 @@ sub deploy_software {
 	
 	my $as_root = $h{'root'};
 	my $target = $h{'target'};
+	
+	
 	my $packages_ref = $h{'packages'} || die "error: deploy_software is missing packages";
 	my @packages = @{$packages_ref};
 	
 	print "install ".@packages." packages:\n";
-	print "install: ".join(',', @packages);
+	print "install: ".join(',', @packages)."\n";
 	
 	lib_needed($ssh, $remote, "git make build-essential cpanminus python-setuptools python-dev checkinstall");
 	
@@ -80,6 +82,9 @@ sub deploy_software {
 	
 	if (defined $target) {
 		$deploy_command .= "--target=$target ";
+	}
+	if (defined $h{'forcetarget'} && $h{'forcetarget'} ==1 ){
+		$deploy_command .= "--forcetarget ";
 	}
 	
 	my $argline = "";
