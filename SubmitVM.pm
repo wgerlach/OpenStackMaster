@@ -87,15 +87,23 @@ sub deploy_software {
 		$deploy_command .= "--forcetarget ";
 	}
 	
-	my $argline = "";
+	my $argline = " ";
 	foreach my $p (@packages) {
 		$argline .= " '".$p."'";
 	}
 	
-	$deploy_command .= $argline;
+	$deploy_command = "cd && ".$deploy_command . $argline;
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploy', 10 , "cd && ".$deploy_command);
+	if (defined($h{'source_file'})) {
+		$deploy_command = '. '.$h{'source_file'}." ; printenv ; ".$deploy_command;
+	}
 	
+	execute_remote_command_in_screen_and_wait_h(	'ssh' => $ssh,
+													'remote' => $remote,
+													'screen_name' => 'deploy',
+													'poll_time' => 10,
+													'remote_command' => $deploy_command,
+													'interactive_shell' => 1);
 	return;
 }
 
@@ -263,15 +271,30 @@ sub myscp {
 }
 
 
-
 sub execute_remote_command_in_screen_and_wait {
-	my $ssh = shift(@_);
-	my $remote = shift(@_);
-	my $screen_name = shift(@_);
-	my $poll_time = shift(@_);
-	my $remote_command = shift(@_);
+	#my $ssh = shift(@_);
+	#my $remote = shift(@_);
+	#my $screen_name = shift(@_);
+	#my $poll_time = shift(@_);
+	#my $remote_command = shift(@_);
 	
-	my $command = "$ssh $remote screen -d -m -L -S $screen_name \"bash -c \\\"$remote_command ; echo \$?\\\"\"";
+	execute_remote_command_in_screen_and_wait_h('ssh' => $_[0], 'remote' => $_[1], 'screen_name' => $_[2], 'poll_time' => $_[3], 'remote_command' => $_[4]);
+}
+
+sub execute_remote_command_in_screen_and_wait_h {
+	my %h = @_;
+	my $ssh = $h{'ssh'};
+	my $remote = $h{'remote'};
+	my $screen_name = $h{'screen_name'};
+	my $poll_time = $h{'poll_time'};
+	my $remote_command = $h{'remote_command'};
+	
+	my $ishell = "";
+	if (defined($h{'interactive_shell'}) && $h{'interactive_shell'} == 1) {
+		$ishell = " -i";
+	}
+	
+	my $command = "$ssh $remote screen -d -m -L -S $screen_name \"bash$ishell -c \\\"$remote_command ; echo \$?\\\"\"";
 	
 	print $command."\n";
 	system($command) == 0
