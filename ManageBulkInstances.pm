@@ -109,7 +109,7 @@ our $options_create_opts = ["Create options",
 							"user-data=s"	=> "pass user data file to new instances",					undef,
 							"saveIpToFile"	=> "saves list of IPs in file",								undef,
 							"greedy"		=> "continue with VM creation, even if some fail",			undef,
-							"to_srv_create" => "timeout server create",			undef
+							"to_srv_create=s" => "timeout server create",			undef
 							];
 
 
