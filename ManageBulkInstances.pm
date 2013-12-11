@@ -108,7 +108,8 @@ our $options_create_opts = ["Create options",
 							"wantip"		=> "external IP, only with count=1",						undef,
 							"user-data=s"	=> "pass user data file to new instances",					undef,
 							"saveIpToFile"	=> "saves list of IPs in file",								undef,
-							"greedy"		=> "continue with VM creation, even if some fail",			undef
+							"greedy"		=> "continue with VM creation, even if some fail",			undef,
+							"timeout_server_create"=> "timeout",			undef
 							];
 
 
@@ -2081,14 +2082,15 @@ sub createSingleServer {
 		}
 		
 		
+		my $timeout_server_create = $arg_hash->{"timeout_server_create"} || 180;
 		
 		# now wait for the new server
 		my $new_server = openstack_api('GET', 'nova', '/servers/'.$instance_id);
 		my $wait_sec = 0;
 		while ($new_server->{'server'}->{'status'} ne "ACTIVE") {
 			
-			if ($wait_sec > 180) {
-				print STDERR "error: ACTIVE wait > 60\n";
+			if ($wait_sec > $timeout_server_create) {
+				print STDERR "error: ACTIVE wait > $timeout_server_create\n";
 				$crashed = 1;
 				next MAINWHILE;
 			}
