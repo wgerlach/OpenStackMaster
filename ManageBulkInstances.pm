@@ -109,7 +109,7 @@ our $options_create_opts = ["Create options",
 							"user-data=s"	=> "pass user data file to new instances",					undef,
 							"saveIpToFile"	=> "saves list of IPs in file",								undef,
 							"greedy"		=> "continue with VM creation, even if some fail",			undef,
-							"timeout_server_create"=> "timeout",			undef
+							"to_srv_create" => "timeout server create",			undef
 							];
 
 
@@ -2082,7 +2082,7 @@ sub createSingleServer {
 		}
 		
 		
-		my $timeout_server_create = $arg_hash->{"timeout_server_create"} || 180;
+		my $timeout_server_create = $arg_hash->{"to_srv_create"} || 180;
 		
 		# now wait for the new server
 		my $new_server = openstack_api('GET', 'nova', '/servers/'.$instance_id);
