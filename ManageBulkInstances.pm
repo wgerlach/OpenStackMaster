@@ -119,7 +119,7 @@ our $options_specify = [	"Specify existing VMs for actions and deletion",
 							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef,
 							"instance_names=s" => "VMs with these names, requires --groupname",			undef,
 							"instance_ids=s" => "VMs with these IDs, requires --groupname",			undef,
-							"iplist=s@"		=> "list of ips, comma separated, use with --sshkey",		undef
+							"instance_ips=s@"	=> "list of IPs, comma separated, use with --groupname",		undef
 							];
 
 our $options_other_opts = ["Other options",
@@ -2499,6 +2499,11 @@ sub get_instances_by_hash {
 		@instance_names = split(',', $arg_hash->{'instance_names'} );
 	}
 	
+	my @instance_ips = ();
+	if (defined $arg_hash->{'instance_ips'}) {
+		@instance_ips = split(',', $arg_hash->{'instance_ips'} );
+	}
+	
 	my @instance_ids = ();
 	if (defined $arg_hash->{'instance_ids'}) {
 		@instance_ids = split(',', $arg_hash->{'instance_ids'} );
@@ -2520,6 +2525,10 @@ sub get_instances_by_hash {
 	
 	if (@instance_names > 0) {
 		$own_hash->{'instance_names'} =  \@instance_names ;
+	}
+	
+	if (@instance_ips > 0) {
+		$own_hash->{'instance_ips'} =  \@instance_ips ;
 	}
 	
 	if (@instance_ids > 0) {
