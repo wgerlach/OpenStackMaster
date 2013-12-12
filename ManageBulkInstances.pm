@@ -3052,6 +3052,12 @@ sub get_instances {
 		my $vm_instancename = $server->{'name'};
 		my $vm_instanceid = $server->{'id'};
 		
+		my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
+		unless (defined $addr_string) {
+			print Dumper($server)."\n";
+			print STDERR "warning: addr_string not defined !\n";
+			next;
+		}
 		
 		my $vm_instanceip;
 		($vm_instanceip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
@@ -3107,12 +3113,7 @@ sub get_instances {
 			next; # no match at all
 		}
 		
-		my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
-		unless (defined $addr_string) {
-			print Dumper($server)."\n";
-			print STDERR "warning: addr_string not defined !\n";
-			next;
-		}
+		
 		
 		unless (defined $vm_instanceip) {
 			next;
