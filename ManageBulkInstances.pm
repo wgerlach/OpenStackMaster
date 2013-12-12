@@ -2504,6 +2504,10 @@ sub get_instances_by_hash {
 		@instance_ids = split(',', $arg_hash->{'instance_ids'} );
 	}
 	
+	my @ip_array = ();
+	if (defined($arg_hash->{"iplist"})) {
+		@ip_array = split(',',join(',', @{$arg_hash->{"iplist"}}));
+	}
 		
 	my $own_hash = {
 		'owner' => $arg_hash->{"owner"}||$os_username,
@@ -2989,15 +2993,16 @@ sub get_instances {
 	print "get_instances: ".join(',', keys(%$arg_hash))."\n";
 	
 	my $instance_names = $arg_hash->{'instance_names'} || []; # array reference !
+	my $instance_ips = $arg_hash->{'instance_ips'} || []; # array reference !
 	my $instance_ids = $arg_hash->{'instance_ids'} || []; # array reference !
 	
 	my $groupname = $arg_hash->{'groupname'}; # only verification when using instance names
 	
 	my $group = $arg_hash->{'group'};
 	
-	if (@{$instance_names} > 0) {
+	if ((@{$instance_names} > 0) || (@{$instance_ips} > 0)) {
 		unless (defined $groupname) {
-			print STDERR "error: --groupname should be provided with --instance_names!\n";
+			print STDERR "error: --groupname should be provided with --instance_names and --instance_ips!\n";
 			print join(',',keys(%$arg_hash))."\n";
 			exit(1);
 		}
@@ -3010,12 +3015,16 @@ sub get_instances {
 	
 	# make hash for fast look-up
 	my $instance_names_hash={};
+	my $instance_ips_hash={};
 	my $instance_ids_hash={};
 	
 	my $instance_names_duplicates ={};
 
 	foreach my $instance_name (@{$instance_names}) {
 		$instance_names_hash->{lc($instance_name)} = 1;
+	}
+	foreach my $instance_ip (@{$instance_ips}) {
+		$instance_ips_hash->{$instance_ip} = 1;
 	}
 	foreach my $instance_id (@{$instance_ids}) {
 		$instance_ids_hash->{$instance_id} = 1;
@@ -3043,6 +3052,18 @@ sub get_instances {
 		my $vm_instancename = $server->{'name'};
 		my $vm_instanceid = $server->{'id'};
 		
+		
+		my $vm_instanceip;
+		($vm_instanceip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
+		
+		if (defined $vm_instanceip) {
+			$vm_instanceip = '10.0.'.$vm_instanceip;
+		} else {
+			print STDERR "warning: no internal IP found for instance  ($vm_instancename)...\n";
+			$vm_instanceip=undef;
+		}
+		
+		
 		my $server_owner = $server->{'metadata'}->{'owner'} || "";
 		my $server_group = $server->{'metadata'}->{'group'} || "";
 		
@@ -3064,7 +3085,11 @@ sub get_instances {
 			
 			$match=1; # name matches and is not duplicate
 		}
-			
+		
+		
+		if (defined($vm_instanceip) && defined($instance_ips_hash->{$vm_instanceip})  ) {
+			$match=1; # IP matches
+		}
 	
 		
 		if (defined($instance_ids_hash->{$vm_instanceid})  ) {
@@ -3089,22 +3114,18 @@ sub get_instances {
 			next;
 		}
 		
-		
-		my $ip;
-		($ip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
-		unless (defined $ip) {
-			print STDERR "warning: no internal IP found for instance  ($vm_instancename)...\n";
+		unless (defined $vm_instanceip) {
 			next;
 		}
-		$ip = '10.0.'.$ip;
-		push(@iplist, $ip);
-		print $ip." ".$vm_instancename."\n";
+		
+		push(@iplist, $vm_instanceip);
+		print $vm_instanceip." ".$vm_instancename."\n";
 		
 		push(@instance_name_list, $vm_instancename);
 		push(@instance_id_list, $vm_instanceid);
 		$server_hash->{$vm_instanceid} = $server;
 		#$server_hash->{$vm_instanceid}->{'name'} = $vm_instancename;
-		$server_hash->{$vm_instanceid}->{'ip'} = $ip;
+		$server_hash->{$vm_instanceid}->{'ip'} = $vm_instanceip;
 		#$server_hash->{$vm_instanceid}->{'key_name'} = get_nested_hash_value($server, 'key_name');
 		#$server_hash->{$vm_instanceid}->{'status'} = get_nested_hash_value($server, 'status');
 		
