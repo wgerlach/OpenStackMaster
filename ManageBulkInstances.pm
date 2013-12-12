@@ -2001,13 +2001,17 @@ sub createSingleServer {
 		
 		if ($try_counter > 3 ) {
 			print STDERR "instance creation failed three times. Stop.\n";
-			system("touch STOPBULKJOBS");
+			unless (defined $arg_hash->{'greedy'}) {
+				system("touch STOPBULKJOBS");
+			}
 			return undef;
 		}
 		
 		if ( $crashed_final==1) {
 			print STDERR "instance creation stopped with critical error.\n";
-			system("touch STOPBULKJOBS");
+			unless (defined $arg_hash->{'greedy'}) {
+				system("touch STOPBULKJOBS");
+			}
 			return undef;
 		}
 		
