@@ -119,7 +119,7 @@ our $options_specify = [	"Specify existing VMs for actions and deletion",
 							"group=s"		=> "use VMs with this groupname (metadata-field)",			undef,
 							"instance_names=s" => "VMs with these names, requires --groupname",			undef,
 							"instance_ids=s" => "VMs with these IDs, requires --groupname",			undef,
-							"instance_ips=s@"	=> "list of IPs, comma separated, use with --groupname",		undef
+							"instance_ips=s"	=> "list of IPs, comma separated, use with --groupname",		undef
 							];
 
 our $options_other_opts = ["Other options",
@@ -2998,12 +2998,17 @@ sub list_group_old {
 sub get_instances {
 	my $arg_hash = shift(@_); # should not be command line hash
 	
+	my $debug = 0;
 	
 	print "get_instances: ".join(',', keys(%$arg_hash))."\n";
 	
 	my $instance_names = $arg_hash->{'instance_names'} || []; # array reference !
 	my $instance_ips = $arg_hash->{'instance_ips'} || []; # array reference !
 	my $instance_ids = $arg_hash->{'instance_ids'} || []; # array reference !
+	
+	if ($debug) {
+		print "instance_ips size: ".@{$instance_ips}."\n";
+	}
 	
 	my $groupname = $arg_hash->{'groupname'}; # only verification when using instance names
 	
@@ -3034,7 +3039,11 @@ sub get_instances {
 	}
 	foreach my $instance_ip (@{$instance_ips}) {
 		$instance_ips_hash->{$instance_ip} = 1;
+		if ($debug) {
+			print "add \"$instance_ip\" to hash\n";
+		}
 	}
+	
 	foreach my $instance_id (@{$instance_ids}) {
 		$instance_ids_hash->{$instance_id} = 1;
 	}
@@ -3052,6 +3061,7 @@ sub get_instances {
 	my @iplist=();
 	
 	my @instance_name_list=();
+	my @instance_ip_list=();
 	my @instance_id_list=();
 	
 	my $server_hash={};
@@ -3061,10 +3071,22 @@ sub get_instances {
 		my $vm_instancename = $server->{'name'};
 		my $vm_instanceid = $server->{'id'};
 		
+		my $server_owner = $server->{'metadata'}->{'owner'} || "";
+		my $server_group = $server->{'metadata'}->{'group'} || "";
+		
+		
+		if ((lc($owner) ne lc($server_owner)) && !defined $arg_hash->{"noownercheck"}) {
+			if ($debug) {
+				print "$vm_instancename : wrong owner\n";
+			}
+			next; # wrong owner
+		}
+		
+		
 		my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
 		unless (defined $addr_string) {
 			print Dumper($server)."\n";
-			print STDERR "warning: addr_string not defined !\n";
+			print STDERR "warning: $vm_instancename : addr_string not defined !\n";
 			next;
 		}
 		
@@ -3078,17 +3100,16 @@ sub get_instances {
 			$vm_instanceip=undef;
 		}
 		
+		if ($debug) {
+			print "$vm_instancename IP : $vm_instanceip\n";
+		}
 		
-		my $server_owner = $server->{'metadata'}->{'owner'} || "";
-		my $server_group = $server->{'metadata'}->{'group'} || "";
 		
 		#if ($instancename =~ /^$groupname/ ) {
 		
 		my $match = 0;
 		
-		if ((lc($owner) ne lc($server_owner)) && !defined $arg_hash->{"noownercheck"}) {
-			next; # wrong owner
-		}
+		
 		
 		
 		if (defined($instance_names_hash->{lc($vm_instancename)})  ) {
@@ -3101,9 +3122,19 @@ sub get_instances {
 			$match=1; # name matches and is not duplicate
 		}
 		
+		if (defined($vm_instanceip)) {
 		
-		if (defined($vm_instanceip) && defined($instance_ips_hash->{$vm_instanceip})  ) {
-			$match=1; # IP matches
+			if ( defined($instance_ips_hash->{$vm_instanceip})  ) {
+				$match=1; # IP matches
+			} else {
+				if ($debug) {
+					print "vm_instanceip \"$vm_instanceip\" not in hash\n";
+				}
+			}
+		} else {
+			if ($debug) {
+				print "vm_instanceip not defined\n";
+			}
 		}
 	
 		
@@ -3119,6 +3150,9 @@ sub get_instances {
 		}
 		
 		if ($match==0) {
+			if ($debug) {
+				print "$vm_instancename : no match\n";
+			}
 			next; # no match at all
 		}
 		
@@ -3132,6 +3166,7 @@ sub get_instances {
 		print $vm_instanceip." ".$vm_instancename."\n";
 		
 		push(@instance_name_list, $vm_instancename);
+		push(@instance_ip_list, $vm_instanceip);
 		push(@instance_id_list, $vm_instanceid);
 		$server_hash->{$vm_instanceid} = $server;
 		#$server_hash->{$vm_instanceid}->{'name'} = $vm_instancename;
@@ -3142,6 +3177,7 @@ sub get_instances {
 	}
 	
 	print "\ninstance_names=".join(',',@instance_name_list)."\n\n";
+	print "instance_ips=".join(',',@instance_ip_list)."\n\n";
 	print "instance_ids=".join(',',@instance_id_list)."\n\n";
 	
 	if (@iplist ==0) {
