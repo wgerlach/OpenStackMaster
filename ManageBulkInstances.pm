@@ -84,7 +84,7 @@ our $options_basicactions = ["Nova actions",
 							"reboot=s"		=> "reboot all instances, \"soft\" or \"hard\"",				\&reboot,
 							"info"			=> "list all instances, volumes, flavors...",				\&info,
 							"listgroup=s"	=> "list all instances in this group (must be owner)",		\&list_group_print,
-							"listips"		=> "list all instances by group or instance_names",			\&list_ips_print,
+							"list"		=> "list all instances by group or instance_names/ip/id",			\&list_ips_print,
 							"savegroup=s"	=> "save group in ipfile",									\&saveGroupInIpFile,
 							"newgroupname=s" => "rename group (will not change hostname!)",				\&renameGroup
 							] ;
