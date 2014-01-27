@@ -70,7 +70,7 @@ sub deploy_software {
 	
 	lib_needed($ssh, $remote, "git make build-essential cpanminus python-setuptools python-dev checkinstall");
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm install JSON Config::IniFiles");
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm install JSON Config::IniFiles Try::Tiny");
 	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl && chmod +x deploy_software.pl");
 	
 	
@@ -80,11 +80,17 @@ sub deploy_software {
 		$deploy_command = "sudo ./deploy_software.pl --root ";
 	}
 	
+	$deploy_command .= "--new ";
+	
 	if (defined $target) {
 		$deploy_command .= "--target=$target ";
 	}
 	if (defined $h{'forcetarget'} && $h{'forcetarget'} ==1 ){
 		$deploy_command .= "--forcetarget ";
+	}
+	
+	if (defined $h{'data_target'}) {
+		$deploy_command .= "--data_target=".$h{'data_target'}.' ';
 	}
 	
 	my $argline = " ";
