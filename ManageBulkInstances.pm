@@ -2190,6 +2190,8 @@ sub createSingleServer {
 		#my $date = `date \"+\%Y\%m\%d \%T\"`;
 		#chop($date);
 		#SubmitVM::remote_system($ssh, $remote, "sudo date --set=\\\"".$date."\\\"") || print STDERR "error setting date/time\n";
+		
+		SubmitVM::remote_system($ssh, $remote, "sudo rm -f /etc/issue.net"); # to get rid of annoying banner
 		SubmitVM::setDate($ssh, $remote);
 		
 		my $device = "/dev/vdc";
