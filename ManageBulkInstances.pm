@@ -107,7 +107,7 @@ our $options_create_opts = ["Create options",
 							"disksize=i"	=> "in GB, creates, attaches, partitions and mounts volume",undef,
 							"wantip"		=> "external IP, only with count=1",						undef,
 							"user-data=s"	=> "pass user data file to new instances",					undef,
-							"security_group"=> "security_group",										undef,
+							"security_group=s"=> "security_group",										undef,
 							"saveIpToFile"	=> "saves list of IPs in file",								undef,
 							"greedy"		=> "continue with VM creation, even if some fail",			undef,
 							"to_srv_create=s" => "timeout server create",			undef
