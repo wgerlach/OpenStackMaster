@@ -107,6 +107,7 @@ our $options_create_opts = ["Create options",
 							"disksize=i"	=> "in GB, creates, attaches, partitions and mounts volume",undef,
 							"wantip"		=> "external IP, only with count=1",						undef,
 							"user-data=s"	=> "pass user data file to new instances",					undef,
+							"security_group"=> "security_group",										undef,
 							"saveIpToFile"	=> "saves list of IPs in file",								undef,
 							"greedy"		=> "continue with VM creation, even if some fail",			undef,
 							"to_srv_create=s" => "timeout server create",			undef
@@ -2047,6 +2048,10 @@ sub createSingleServer {
 			$create_parameter_hash->{'user-data'} = $arg_hash->{"user-data"};
 		}
 		
+		
+		if (defined $arg_hash->{"security_group"}) {
+			$create_parameter_hash->{'security_group'} = $arg_hash->{"security_group"};
+		}
 		
 		# create server (do not wait here)
 		my $create_servers = openstack_api('POST', 'nova', '/servers', { 'server' => $create_parameter_hash});
