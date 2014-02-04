@@ -2050,7 +2050,7 @@ sub createSingleServer {
 		
 		
 		if (defined $arg_hash->{"security_group"}) {
-			$create_parameter_hash->{'security_group'} = $arg_hash->{"security_group"};
+			$create_parameter_hash->{'security_group'} = [{'name' => $arg_hash->{"security_group"}}];
 		}
 		
 		# create server (do not wait here)
