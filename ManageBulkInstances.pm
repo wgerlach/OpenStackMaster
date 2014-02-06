@@ -3019,6 +3019,10 @@ sub get_instances {
 	
 	if ($debug) {
 		print "instance_ips size: ".@{$instance_ips}."\n";
+		
+		print "got instance_names: ".join(',', @{$instance_names})."\n";
+		print "got instance_ips: ".join(',', @{$instance_ips})."\n";
+		print "got instance_ids: ".join(',', @{$instance_ids})."\n";
 	}
 	
 	my $groupname = $arg_hash->{'groupname'}; # only verification when using instance names
