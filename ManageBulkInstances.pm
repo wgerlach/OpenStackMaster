@@ -3009,7 +3009,7 @@ sub list_group_old {
 sub get_instances {
 	my $arg_hash = shift(@_); # should not be command line hash
 	
-	my $debug = 0;
+	my $debug = 1;
 	
 	print "get_instances: ".join(',', keys(%$arg_hash))."\n";
 	
