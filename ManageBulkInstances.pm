@@ -3136,7 +3136,7 @@ sub get_instances {
 			$match=1; # name matches and is not duplicate
 		} else {
 			if ($debug) {
-				print "$vm_instancename name does not match\n";
+				print lc($vm_instancename)." name does not match\n";
 				print 'hash: '.join(',', keys(%$instance_names_hash))."\n"
 			}
 		}
