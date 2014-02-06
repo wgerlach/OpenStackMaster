@@ -3050,6 +3050,7 @@ sub get_instances {
 	my $instance_names_duplicates ={};
 
 	foreach my $instance_name (@{$instance_names}) {
+		$instance_name =~ s/\-/\_/g;
 		$instance_names_hash->{lc($instance_name)} = 1;
 	}
 	foreach my $instance_ip (@{$instance_ips}) {
@@ -3083,8 +3084,10 @@ sub get_instances {
 	
 	foreach my $server (@{$servers_detail}) {
 		
-		my $vm_instancename = $server->{'name'};
+		my $vm_instancename = lc($server->{'name'});
 		my $vm_instanceid = $server->{'id'};
+		
+		$vm_instancename =~ s/\-/\_/g;
 		
 		my $server_owner = $server->{'metadata'}->{'owner'} || "";
 		my $server_group = $server->{'metadata'}->{'group'} || "";
@@ -3127,20 +3130,20 @@ sub get_instances {
 		
 		
 		
-		if (defined($instance_names_hash->{lc($vm_instancename)})  ) {
+		if (defined($instance_names_hash->{$vm_instancename})  ) {
 			if ($debug) {
 				print "$vm_instancename name matches\n";
 			}
-			if (defined $instance_names_duplicates->{lc($vm_instancename)}) {
+			if (defined $instance_names_duplicates->{$vm_instancename}) {
 				print STDERR "error: instance name $vm_instancename is not uniqe!!!\n";
 				exit(1);
 			}
-			$instance_names_duplicates->{lc($vm_instancename)}=1;
+			$instance_names_duplicates->{$vm_instancename}=1;
 			
 			$match=1; # name matches and is not duplicate
 		} else {
 			if ($debug) {
-				print lc($vm_instancename)." name does not match\n";
+				print $vm_instancename." name does not match\n";
 				print 'hash: '.join(',', keys(%$instance_names_hash))."\n"
 			}
 		}
