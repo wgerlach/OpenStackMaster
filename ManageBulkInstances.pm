@@ -3124,6 +3124,9 @@ sub get_instances {
 		
 		
 		if (defined($instance_names_hash->{lc($vm_instancename)})  ) {
+			if ($debug) {
+				print "$vm_instancename name matches\n";
+			}
 			if (defined $instance_names_duplicates->{lc($vm_instancename)}) {
 				print STDERR "error: instance name $vm_instancename is not uniqe!!!\n";
 				exit(1);
@@ -3131,6 +3134,11 @@ sub get_instances {
 			$instance_names_duplicates->{lc($vm_instancename)}=1;
 			
 			$match=1; # name matches and is not duplicate
+		} else {
+			if ($debug) {
+				print "$vm_instancename name does not match\n";
+				print 'hash: '.join(',', keys(%$instance_names_hash))."\n"
+			}
 		}
 		
 		if (defined($vm_instanceip)) {
