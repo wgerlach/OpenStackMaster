@@ -2399,7 +2399,7 @@ sub createSingleServer {
 				next;
 			}
 			print "newip: $newip\n"; # $instance_ip
-			my $add_ip = openstack_api('POST', 'nova', '/servers/'.$instance_ip.'/action', {'addFloatingIp' => {'address' => $newip}});
+			my $add_ip = openstack_api('POST', 'nova', '/servers/'.$instance_id.'/action', {'addFloatingIp' => {'address' => $newip}});
 			
 		}
 		
