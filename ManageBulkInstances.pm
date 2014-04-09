@@ -1,6 +1,5 @@
 #!/usr/bin/env perl
 
-
 package ManageBulkInstances;
 
 use strict;
@@ -513,7 +512,6 @@ sub get_nested_hash_value {
 					} elsif (@matches == 1) {
 						$h = shift(@matches);
 					} else {
-						print Dumper($hash_ref);
 						print STDERR "error: array element is not unique (i=$i)\n";
 						print STDERR "count: ".@matches."\n";
 						
@@ -1238,7 +1236,7 @@ sub os_get_token {
 		$volume_endpoint_uri = get_nested_hash_value($ret_hash, 'access' , 'serviceCatalog' , ['name','volume'], 'endpoints' , '0', 'publicURL');
 
 		unless (defined $volume_endpoint_uri) {
-			die;
+			#die;
 		}
 		
 	}
@@ -1271,6 +1269,7 @@ sub openstack_api {
 		$uri = $nova_endpoint_uri . $path;
 	} elsif ($service eq 'volume') {
 		$uri = $volume_endpoint_uri . $path;
+		return {};
 	} else {
 		die;
 	}
@@ -1917,10 +1916,10 @@ sub createNew {
 	return \@children_iplist;
 }
 
-
 sub getServerIP {
 	
 	my $server = shift(@_);
+
 	# get local IP of instance
 	my $server_address_private = $server->{'addresses'}->{'private'};
 
@@ -1928,7 +1927,16 @@ sub getServerIP {
 	unless(defined $server_address_private) {
 		$server_address_private = $server->{'addresses'}->{'service'};
 	}
-	
+
+	unless(defined $server_address_private) {
+		my @arr = keys %{$server->{'addresses'}};
+		if(@arr != 1) {
+			return undef;
+		}
+		my $key = $arr[0];
+		$server_address_private = $server->{'addresses'}->{$key};
+	}
+
 	return $server_address_private;
 }
 
@@ -2160,7 +2168,7 @@ sub createSingleServer {
 		
 		my $instance_ip = $instance_ip_hash->{'addr'};
 		
-		unless ($instance_ip =~ /^10\.0\.\d+\.\d+$/) {
+		unless ($instance_ip =~ /^10\.\d+\.\d+\.\d+$/) {
 			print STDERR "error: instance_ip format wrong \"$instance_ip\" \n";
 			$crashed_final = 1;
 			next MAINWHILE;
@@ -2799,7 +2807,7 @@ sub deletebulk_old {
 		
 		my $ip = $instance_ip_hash->{'addr'};
 		
-		unless ($ip =~ /^10\.0\.\d+\.\d+$/) {
+		unless ($ip =~ /^10\.\d+\.\d+\.\d+$/) {
 			print STDERR "warning: ip format not ok \"$ip\"\n";
 			next;
 		}
@@ -2967,27 +2975,25 @@ sub list_group_old {
 		
 		#if ($instancename =~ /^$groupname/ ) {
 		if ( (lc($owner) eq lc($server_owner)) && lc($group) eq lc($server_group) ) {
-			
-						
-			
-			my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
+
+			my $addr = getServerIP($server);
+			my $addr_string = $addr->[0]->{'addr'};
 			unless (defined $addr_string) {
-				print Dumper($server)."\n";
 				print STDERR "warning: addr_string not defined !\n";
 				next;
 			}
 			
 			
 			my $ip;
-			($ip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
+			($ip) = $addr_string =~ /10\.(\d+\.\d+\.\d+)/;
 			unless (defined $ip) {
 				print STDERR "warning: no internal IP found for instance  ($instancename)...\n";
 				next;
 			}
-			push(@iplist, "10.0.".$ip);
+			push(@iplist, "10.".$ip);
 			push(@instance_name_list, $instancename);
 			push(@instance_id_list, $instance_id);
-			print "10.0.".$ip." ".$instancename."\n";
+			print "10.".$ip." ".$instancename."\n";
 			
 			
 		}
@@ -3099,20 +3105,19 @@ sub get_instances {
 			}
 			next; # wrong owner
 		}
-		
-		
-		my $addr_string = get_nested_hash_value($server, 'addresses', 'service', 0, 'addr');
+	
+		my $addr = getServerIP($server);
+		my $addr_string = $addr->[0]->{'addr'};
 		unless (defined $addr_string) {
-			print Dumper($server)."\n";
 			print STDERR "warning: $vm_instancename : addr_string not defined !\n";
 			next;
 		}
 		
 		my $vm_instanceip;
-		($vm_instanceip) = $addr_string =~ /10\.0\.(\d+\.\d+)/;
+		($vm_instanceip) = $addr_string =~ /10\.(\d+\.\d+\.\d+)/;
 		
 		if (defined $vm_instanceip) {
-			$vm_instanceip = '10.0.'.$vm_instanceip;
+			$vm_instanceip = '10.'.$vm_instanceip;
 		} else {
 			print STDERR "warning: no internal IP found for instance  ($vm_instancename)...\n";
 			$vm_instanceip=undef;
