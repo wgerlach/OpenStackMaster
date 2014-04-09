@@ -2541,6 +2541,14 @@ sub get_instances_by_hash {
 	
 	transferSubHash($arg_hash, $own_hash, 'group', 'groupname');
 	
+	if (defined $arg_hash->{'noownercheck'} && $arg_hash->{'noownercheck'} == 1) {
+		$own_hash->{'noownercheck'} = 1;
+	}
+	
+	if (defined $arg_hash->{'owner'} ) {
+		$own_hash->{'owner'} = $arg_hash->{'owner'};
+	}
+
 	
 	if (@instance_names > 0) {
 		$own_hash->{'instance_names'} =  \@instance_names ;
