@@ -24,10 +24,10 @@ Configure your ~/.bashrc and create ~/.bulkvm as explained below.<br>
 Configuration
 -------------
 Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
-> OS_USERNAME=<br>
-> OS_PASSWORD=<br>
-> OS_AUTH_URL=<br>
-> OS_TENANT_NAME= or OS_TENANT_ID=<br>
+> export OS_USERNAME=<br>
+> export OS_PASSWORD=<br>
+> export OS_AUTH_URL=<br>
+> export OS_TENANT_NAME= or OS_TENANT_ID=<br>
 
 Afterwards, do not forget to update the current shell:
 > . ~/.bashrc
