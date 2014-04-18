@@ -7,7 +7,7 @@ Installation
 ------------
 Install some Perl libraries:
 > sudo apt-get install liblocal-lib-perl libio-all-lwp-perl<br>
-> sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable<br>
+> sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::Protocol::https<br>
 
 Make sure that Parallel::ForkManager is at least version 0.7.6.
 
