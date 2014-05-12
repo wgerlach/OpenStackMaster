@@ -70,7 +70,7 @@ sub deploy_software {
 	
 	lib_needed($ssh, $remote, "git make build-essential cpanminus python-setuptools python-dev checkinstall");
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm install JSON Config::IniFiles Try::Tiny");
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm JSON Config::IniFiles Try::Tiny");
 	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo sh -c 'curl https://raw.githubusercontent.com/wgerlach/USAGEPOD/master/lib/USAGEPOD.pm > /usr/share/perl5/USAGEPOD.pm'");
 	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl && chmod +x deploy_software.pl");
 	
