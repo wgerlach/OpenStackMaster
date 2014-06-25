@@ -1319,7 +1319,7 @@ sub os_server_detail_print {
 		#exit(0);
 		
 		my @networks;
-		foreach my $address_key (keys($server->{'addresses'}) { # service , address, ...
+		foreach my $address_key (keys(%{$server->{'addresses'}})) { # service , address, ...
 			foreach my $address (@{$address_key}) { # array
 				push(@networks, $address->{'addr'});
 			}
