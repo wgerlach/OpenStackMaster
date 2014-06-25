@@ -1322,6 +1322,9 @@ sub os_server_detail_print {
 		foreach my $address (@{$server->{'addresses'}->{'service'}}) {
 			push(@networks, $address->{'addr'});
 		}
+		foreach my $address (@{$server->{'addresses'}->{'private'}}) {
+			push(@networks, $address->{'addr'});
+		}
 		
 		my $server_id = $server->{'id'};
 		my $owner = $server->{'metadata'}->{'owner'} || "";
@@ -3220,7 +3223,7 @@ sub get_instances {
 	print "instance_ids=".join(',',@instance_id_list)."\n\n";
 	
 	if (@iplist ==0) {
-		print STDERR "error: no instance found that matches your criteria for owner \"$owner\"\n";
+		print STDERR "error: no instance found that matches your criteria\n";
 		exit(1);
 	}
 	
