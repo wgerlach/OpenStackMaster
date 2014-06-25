@@ -1326,6 +1326,10 @@ sub os_server_detail_print {
 			push(@networks, $address->{'addr'});
 		}
 		
+		if (@networks == 0) {
+			print Dumper($server);
+		}
+		
 		my $server_id = $server->{'id'};
 		my $owner = $server->{'metadata'}->{'owner'} || "";
 		my $group = $server->{'metadata'}->{'group'} || "";
