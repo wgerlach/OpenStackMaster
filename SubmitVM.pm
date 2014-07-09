@@ -68,11 +68,14 @@ sub deploy_software {
 	print "install ".@packages." packages:\n";
 	print "install: ".join(',', @packages)."\n";
 	
-	lib_needed($ssh, $remote, "git make build-essential cpanminus python-setuptools python-dev checkinstall");
+	#lib_needed($ssh, $remote, "git make build-essential cpanminus python-setuptools python-dev checkinstall");
 	
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm JSON Config::IniFiles Try::Tiny");
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo sh -c 'curl https://raw.githubusercontent.com/wgerlach/USAGEPOD/master/lib/USAGEPOD.pm > /usr/share/perl5/USAGEPOD.pm'");
-	execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl && chmod +x deploy_software.pl");
+	#execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo cpanm JSON Config::IniFiles Try::Tiny");
+	#execute_remote_command_in_screen_and_wait($ssh, $remote, 'deploymodules', 5 , "sudo sh -c 'curl https://raw.githubusercontent.com/wgerlach/USAGEPOD/master/lib/USAGEPOD.pm > /usr/share/perl5/USAGEPOD.pm'");
+	#execute_remote_command_in_screen_and_wait($ssh, $remote, 'deployscript', 5 , "cd && rm -rf deploy_software.pl && wget https://raw.github.com/wgerlach/DeploySoftware/master/deploy_software.pl && chmod +x deploy_software.pl");
+	
+	execute_remote_command_in_screen_and_wait($ssh, $remote, 'installsodoku', 5 , "sudo sh -c 'rm -f install_ubuntu.sh ; wget https://raw.githubusercontent.com/wgerlach/SODOKU/master/install_ubuntu.sh ; chmod +x install_ubuntu.sh ; ./install_ubuntu.sh'");
+	
 	
 	
 	my $deploy_command = "./deploy_software.pl ";
