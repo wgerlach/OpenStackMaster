@@ -1239,9 +1239,11 @@ sub os_get_token {
 		unless (defined $nova_endpoint_uri) {
 			die;
 		}
-		$volume_endpoint_uri = get_nested_hash_value($ret_hash, 'access' , 'serviceCatalog' , ['name','volume'], 'endpoints' , '0', 'publicURL');
-
+		
+		$volume_endpoint_uri = get_nested_hash_value($ret_hash, 'access' , 'serviceCatalog' , ['type','volume'], 'endpoints' , '0', 'publicURL');
 		unless (defined $volume_endpoint_uri) {
+			$volume_endpoint_uri = get_nested_hash_value($ret_hash, 'access' , 'serviceCatalog' , ['name','volume'], 'endpoints' , '0', 'publicURL');
+			print STDERR "warning: no volume service found\n";
 			#die;
 		}
 		
