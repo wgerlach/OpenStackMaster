@@ -508,6 +508,7 @@ sub get_nested_hash_value {
 				} else {
 					if (@matches == 0) {
 						print STDERR Dumper(@route)."\n";
+						print STDERR Dumper($hash_ref)."\n";
 						print STDERR "error: no matching array element with (i=$i)\n";
 						return undef;
 					} elsif (@matches == 1) {
