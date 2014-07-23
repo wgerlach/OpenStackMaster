@@ -1144,6 +1144,9 @@ sub json_request {
 		if ( defined($ret_hash) ) {
 		
 			if ( defined($ret_hash->{'badRequest'}) ) {
+				
+				print STDERR "request was: ".Dumper($json_query_hash)."\n";
+				
 				print STDERR "json badRequest messsage: ".($ret_hash->{'badRequest'}->{'message'}||"NA")."\n";
 				print STDERR "json badRequest code: ".($ret_hash->{'badRequest'}->{'code'}||"NA")."\n";
 			}
