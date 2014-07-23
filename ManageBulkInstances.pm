@@ -1636,7 +1636,9 @@ sub createNew {
 	
 	my $images_detail = openstack_api('GET', 'nova', '/images/detail');
 	
-	print Dumper($images_detail) ;
+	unless (defined $images_detail) {
+		die;
+	}
 	
 	my $image_id = $arg_hash->{"image"};
 	my $image_name;
