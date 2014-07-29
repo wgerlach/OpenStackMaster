@@ -2135,7 +2135,7 @@ sub createSingleServer {
 			if ($new_server->{'server'}->{'status'} eq "ERROR") {
 				print Dumper($new_server);
 				print STDERR "error: new instance in status ERROR!\n";
-				if ($new_server->{'server'}->{'OS-EXT-STS:task_state'} eq 'scheduling') {
+				if (defined ($new_server->{'server'}->{'OS-EXT-STS:task_state'}) && $new_server->{'server'}->{'OS-EXT-STS:task_state'} eq 'scheduling') {
 					print STDERR "error: new instance is in ERROR state while scheduling\n";
 					$crashed_final = 1;
 					next MAINWHILE;
