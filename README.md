@@ -68,46 +68,62 @@ options of vmAWE.pl:
     Nova actions:
      --create=i            create i new instances from snapshot/image
      --delete              use with --group,ipfile or iplist
+     --reboot=s            reboot all instances, "soft" or "hard"
      --info                list all instances, volumes, flavors...
      --listgroup=s         list all instances in this group (must be owner)
+     --list                list all instances by group or instance_names/ip/id
      --savegroup=s         save group in ipfile
+     --newgroupname=s      rename group (will not change hostname!)
 
     VM actions:
      --sshtest             try to ssh all instances
 
     Create options:
-     --flavor_name=s       optional, use with --create
-     --image=s             image ID, use with --create
-     --image_name=s        image name, use with action --create
-     --key_name=s          required, key_name as in Openstack
-     --groupname=s         optional, name of the new group
-     --nogroupcheck        optional, use this to add VMs to existing group
-     --onlygroupname       optional, instance names all equal groupname
+     --flavor_name=s       flavor name for hardware selection
+     --image=s             image identifier
+     --image_name=s        image name, as alternative to image identifer
+     --key_name=s          ssh key_name as in Openstack
+     --groupname=s         required, name of the new group
+     --nogroupcheck        use this to add VMs to existing group
+     --onlygroupname       instance names all equal groupname
+     --namelist=s          comma-separated list of names to choose from
      --owner=s             optional, metadata information on VM, default os_username
-     --noownercheck        optional, disables owner check
-     --disksize=i          optional, in GB, creates, attaches and mounts volume
-     --wantip              optional, external IP, only with count=1
-     --user-data=s         optional, pass user data file to new instances
-     --saveIpToFile        optional, saves list of IPs in file
+     --disksize=i          in GB, creates, attaches, partitions and mounts volume
+     --wantip              external IP, only with count=1
+     --user-data=s         pass user data file to new instances
+     --security_groups=s   security_groups
+     --saveIpToFile        saves list of IPs in file
+     --greedy              continue with VM creation, even if some fail
+     --to_srv_create=s     timeout server create
+
+    Other options:
+     --noownercheck        disables owner check
+     --debug               debug info
 
     Specify existing VMs for actions and deletion:
      --group=s             use VMs with this groupname (metadata-field)
-     --instance=s          use single VMs with this instance name
-     --iplist=s@           list of ips, comma separated, use with --sshkey
+     --instance_names=s    VMs with these names, requires --groupname
+     --instance_ids=s      VMs with these IDs, requires --groupname
+     --instance_ips=s      list of IPs, comma separated, use with --groupname
 
     AWE actions (independent, can be combinded):
      --addscripts=s        list of scripts, comma separated
-     --awecfg=s            see --serverurl and --awegroup
+     --deploy=s@           deploy any software on vm
+     --root_deploy=s@      deploy any software on vm as root
+     --deploy_target=s     deploy target
+     --deploy_data_target=sspecifiy data target, e.g. /home/ubuntu/data/
+     --awecfg=s@           configure AWE client: [section]key=value?key=value...
+     --k_awecfg=s@         (KBase) configure AWE client: [section]key=value?key=value...
      --update              installs or updates AWE client
+     --k_update            (KBase) updates AWE client
+     --id_rsa=s            copy local file to /root/.ssh/id_rsa
      --startawe            
      --stopawe             
      --restartawe          
      --command=s           pass a command to all VMs, e.g. "df -h"
+     --copy=s              scp file over to host, local:remote
+     --snapshot=s          awesome feature that is not implemented yet
      --example             example for executing perl subroutine remotely
-
-    AWE options:
-     --serverurl=s         optional, use with action --awecfg
-     --awegroup=s          optional, use with actions --awecfg
 
 
 Show tenant resources:
