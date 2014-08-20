@@ -2554,8 +2554,10 @@ sub get_instances_by_hash {
 		
 	my $own_hash = {
 		'owner' => $arg_hash->{"owner"}||$os_username,
-		'username' => $arg_hash->{"username"} || $vm_user
+		'username' => $arg_hash->{"username"} || $vm_user,
+		'debug' => $arg_hash->{"debug"}
 	};
+	
 	
 	
 	transferSubHash($arg_hash, $own_hash, 'group', 'groupname');
@@ -3042,7 +3044,10 @@ sub list_group_old {
 sub get_instances {
 	my $arg_hash = shift(@_); # should not be command line hash
 	
-	my $debug = 0;
+	my $debug = $arg_hash->{"debug"} || 0;
+	
+	
+	
 	
 	print "get_instances: ".join(',', keys(%$arg_hash))."\n";
 	
