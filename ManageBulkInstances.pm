@@ -123,7 +123,8 @@ our $options_specify = [	"Specify existing VMs for actions and deletion",
 							];
 
 our $options_other_opts = ["Other options",
-							"noownercheck"	=> "disables owner check",									undef
+							"noownercheck"	=> "disables owner check",									undef,
+							"debug"	=> "debug info",									undef
 ];
 
 our @options_all = ($options_basicactions, $options_vmactions, $options_create_opts, $options_other_opts, $options_specify);
