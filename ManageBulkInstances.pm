@@ -3245,7 +3245,7 @@ sub get_instances {
 	print "instance_ids=".join(',',@instance_id_list)."\n\n";
 	
 	if (@iplist ==0) {
-		print STDERR "error: no instance found that matches your criteria\n";
+		print STDERR "error: no instance found that matches your criteria (maybe use --noownercheck)\n";
 		exit(1);
 	}
 	
