@@ -2148,6 +2148,17 @@ sub createSingleServer {
 						print STDERR "ERRORMESSAGE: $hashkey : ".$new_server->{'server'}->{'fault'}->{$hashkey}."\n";
 					}
 				}
+				
+				#Insufficient compute resources.
+				if (defined $new_server->{'server'}->{'fault'}->{'message'}) {
+					if ($new_server->{'server'}->{'fault'}->{'message'} eq 'Insufficient compute resources.') {
+						print STDERR "error: 'Insufficient compute resources' has been reported, I will stop now.\n";
+						$crashed_final = 1;
+						next MAINWHILE;
+					}
+					
+				}
+				
 				$crashed = 1;
 				next MAINWHILE;
 			}
