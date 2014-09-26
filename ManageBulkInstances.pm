@@ -1650,7 +1650,12 @@ sub createNew {
 	my $image_id = $arg_hash->{"image"};
 	my $image_name;
 	unless (defined $image_id) {
-		$image_name = $arg_hash->{"image_name"} || $image_name;
+		$image_name = $arg_hash->{"image_name"};
+		unless (defined $image_name) {
+			print STDERR "error: image and image_name are not defined";
+			return undef;
+		}
+		
 		print "searching for image with name \"$image_name\"\n";
 		
 		my @image_objects = get_nested_hash_value($images_detail, 'images', ['name', $image_name]);
