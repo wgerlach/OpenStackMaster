@@ -106,10 +106,11 @@ our $options_create_opts = ["Create options",
 							"disksize=i"	=> "in GB, creates, attaches, partitions and mounts volume",undef,
 							"wantip"		=> "external IP, only with count=1",						undef,
 							"user-data=s"	=> "pass user data file to new instances",					undef,
-							"security_groups=s"=> "security_groups",										undef,
+							"security_groups=s"=> "security_groups",									undef,
 							"saveIpToFile"	=> "saves list of IPs in file",								undef,
 							"greedy"		=> "continue with VM creation, even if some fail",			undef,
-							"to_srv_create=s" => "timeout server create",			undef
+							"to_srv_create=s" => "timeout server create",								undef,
+							"max_threads=s"	=> "max threads (default 8)", 								undef
 							];
 
 
@@ -1625,6 +1626,7 @@ sub createNew {
 	my $groupname = $arg_hash->{"groupname"}|| die "error: groupname not defined\n";
 	my $disksize = $arg_hash->{"disksize"} || 0;
 	my $wantip = $arg_hash->{"wantip"} || 0;
+	my $max_threads = $arg_hash->{"max_threads"} || 8;
 	
 	#$image = $arg_hash->{"image"} || $image;
 	
@@ -1823,7 +1825,7 @@ sub createNew {
 		@nameslist=@tmp_names;
 	}
 	
-	my $max_threads = 8;
+	
 	print "create Parallel::ForkManager object\n";
 	my $manager = new Parallel::ForkManager( ($max_threads, $count)[$max_threads > $count] ); # min 5 $count
 	
