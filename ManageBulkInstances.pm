@@ -1661,6 +1661,7 @@ sub createNew {
 		my @image_objects = get_nested_hash_value($images_detail, 'images', ['name', $image_name]);
 		
 		if (@image_objects == 0) {
+			print Dumper($images_detail)."\n";
 			print "error: image_id undefined \n";
 			return undef;
 		} elsif (@image_objects == 1) {
