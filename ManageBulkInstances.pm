@@ -1107,7 +1107,7 @@ sub json_request {
 		$json =  JSON::encode_json($json_query_hash ); #'{"username":"foo","password":"bar"}';
 		print "json: ".$json."\n";
 	}
-	print "uri: $uri\n";
+	print "request uri: $type $uri\n";
 	
 	
 	my $req = HTTP::Request->new( $type, $uri );
@@ -1149,8 +1149,8 @@ sub json_request {
 		
 			if ( defined($ret_hash->{'badRequest'}) ) {
 				
-				print STDERR "request was: ".Dumper($json_query_hash)."\n";
-				
+				print STDERR "request json: ".Dumper($json_query_hash)."\n";
+				print STDERR "complete request was : ".Dumper($req)."\n";
 				print STDERR "json badRequest messsage: ".($ret_hash->{'badRequest'}->{'message'}||"NA")."\n";
 				print STDERR "json badRequest code: ".($ret_hash->{'badRequest'}->{'code'}||"NA")."\n";
 			}
