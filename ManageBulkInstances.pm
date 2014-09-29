@@ -454,7 +454,8 @@ sub parallell_job_new {
 			"vmargs_ref" => $arg_hash->{"vmargs_ref"},
 			"function_ref" => $arg_hash->{"function_ref"},
 			"ip_to_keyfile" => $ip_to_keyfile,
-			"username" => $arg_hash->{"username"}
+			"username" => $arg_hash->{"username"},
+			"max_threads" => $arg_hash->{"max_threads"}
 		}
 	);
 	

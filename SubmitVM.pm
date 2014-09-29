@@ -468,7 +468,7 @@ sub parallell_job_new {
 		$ip_to_keyfile = $args_hash->{"ip_to_keyfile"};
 	}
 	
-	
+	$max_threads = $args_hash->{"max_threads"};
 	
 	unless (defined $args_hash->{"vmips_ref"}) {
 		print STDERR "error: no IPs found\n";
@@ -514,8 +514,11 @@ sub parallell_job_new {
 	
 	my $job_finished = 0;
 	
+	unless (defined $max_threads) {
+		$max_threads = $job_count;
+	}
 	
-	my $manager = new Parallel::ForkManager( $job_count);
+	my $manager = new Parallel::ForkManager( ($max_threads, $job_count)[$max_threads > $job_count] );
 	
 	$SIG{CHLD} = sub{  Parallel::ForkManager::wait_children($manager) };
 	
