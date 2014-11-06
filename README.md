@@ -1,7 +1,7 @@
-BulkVM
+OpenStackMaster
 ======
 
-Perl modules for the instantiation of, configuration of and communication with multiple VMs in an Openstack environment.
+Perl script and modules for the instantiation of, configuration of and communication with multiple VMs in an Openstack environment.
 
 Installation
 ------------
@@ -10,14 +10,6 @@ Install some Perl libraries:
 > sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::Protocol::https<br>
 
 Make sure that Parallel::ForkManager is at least version 0.7.6.
-
-Do a "git clone" of this repository or simply wget the two modules:
-> wget https://github.com/wgerlach/BulkVM/raw/master/ManageBulkInstances.pm<br>
-> wget https://github.com/wgerlach/BulkVM/raw/master/SubmitVM.pm<br>
-
-If you want to use AWE, you might want to download this script:<br>
-> wget https://github.com/wtangiit/vmScriptAWE/raw/master/vmAWE.pl<br>
-> chmod +x vmAWE.pl<br>
 
 Configure your ~/.bashrc and create ~/.bulkvm as explained below.<br>
 
