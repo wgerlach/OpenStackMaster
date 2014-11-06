@@ -7,8 +7,8 @@ Installation
 ------------
 Install some Perl libraries:
 ```shell
-sudo apt-get install liblocal-lib-perl libio-all-lwp-perl build-essential
-sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::Protocol::https
+sudo apt-get install liblocal-lib-perl libio-all-lwp-perl libfile-flock-perl build-essential 
+sudo cpan install Parallel::ForkManager JSON Text::ASCIITable LWP::Protocol::https
 ```
 
 Make sure that Parallel::ForkManager is at least version 0.7.6.
