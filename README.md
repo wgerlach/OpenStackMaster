@@ -6,8 +6,10 @@ Perl script and modules for the instantiation of, configuration of and communica
 Installation
 ------------
 Install some Perl libraries:
-> sudo apt-get install liblocal-lib-perl libio-all-lwp-perl<br>
-> sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::Protocol::https<br>
+```shell
+sudo apt-get install liblocal-lib-perl libio-all-lwp-perl build-essential
+sudo cpan install Parallel::ForkManager File::Flock JSON Text::ASCIITable LWP::Protocol::https
+```
 
 Make sure that Parallel::ForkManager is at least version 0.7.6.
 
@@ -16,26 +18,34 @@ Configure your ~/.bashrc and create ~/.bulkvm as explained below.<br>
 Configuration
 -------------
 Please defined the following environment variables, or modify ManageBulkInstances.pm accordingly:<br>
-> export OS_USERNAME=<br>
-> export OS_PASSWORD=<br>
-> export OS_AUTH_URL=<br>
-> export OS_TENANT_NAME= or OS_TENANT_ID=<br>
+```shell
+export OS_USERNAME=
+export OS_PASSWORD=
+export OS_AUTH_URL=
+export OS_TENANT_NAME= or OS_TENANT_ID=
+```
 
-Afterwards, do not forget to update the current shell:
-> . ~/.bashrc
+Afterwards, do not forget to update the current shell:<br>
+```shell
+. ~/.bashrc
+```
 
 When you start VMs, you can specify some default options that are used when you create new VMs, e.g. default ssh key_name, or default image you want.<br>
 
 ~/.bulkvm<br>
 
-> key_name=xyz<br>
-> image_name=Ubuntu Precise 12.04 (Preferred Image)<br>
+```shell
+key_name=xyz
+image_name=Ubuntu Precise 12.04 (Preferred Image)
+```
 
 <br>
 Options provided at command line have higher priority of course. Note that your private key file should have the same name as the key_name in Openstack and should be located in your ~/.ssh directory. In this example it would be ~/.ssh/xyz or ~/.ssh/xyz.pem .
 
 Test configuration, e.g. with vmAWE.pl:<br>
-> vmAWE.pl --info
+```shell
+vmAWE.pl --info
+```
 
 ManageBulkInstances.pm 
 ----------------------
@@ -56,7 +66,7 @@ https://github.com/wtangiit/vmScriptAWE<br>
 The first four option groups are generic, they are inherited from the ManageBulkInstances.pm module. Only the last two option groups (AWE actions and AWE options) are AWE-specifc options that are defined in the vmAWE.pl script.
 
 options of vmAWE.pl: 
-
+```shell
     Nova actions:
      --create=i            create i new instances from snapshot/image
      --delete              use with --group,ipfile or iplist
@@ -116,7 +126,7 @@ options of vmAWE.pl:
      --copy=s              scp file over to host, local:remote
      --snapshot=s          awesome feature that is not implemented yet
      --example             example for executing perl subroutine remotely
-
+```
 
 Show tenant resources:
 > vmAWE.pl --info
