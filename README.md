@@ -66,7 +66,7 @@ https://github.com/wtangiit/vmScriptAWE<br>
 The first four option groups are generic, they are inherited from the ManageBulkInstances.pm module. Only the last two option groups (AWE actions and AWE options) are AWE-specifc options that are defined in the vmAWE.pl script.
 
 options of vmAWE.pl: 
-```shell
+```textile
     Nova actions:
      --create=i            create i new instances from snapshot/image
      --delete              use with --group,ipfile or iplist
