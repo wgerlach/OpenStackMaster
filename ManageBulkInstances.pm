@@ -427,7 +427,7 @@ sub parallell_job_new {
 		
 	}
 	
-	foreach my $key_name (keys($key_name_to_key_file)) {
+	foreach my $key_name (keys(%$key_name_to_key_file)) {
 		#print "got key: $key_name\n";
 	
 		$key_name_to_key_file->{$key_name} = get_ssh_key_file($key_name);
