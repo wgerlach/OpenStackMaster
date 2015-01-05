@@ -311,7 +311,7 @@ sub thread_function {
 		}
 		
 		# scp x.txt remotehost:
-		my $copy_cmd = "$scp $localfile $remote:$target";
+		my $copy_cmd = "$scp -r $localfile $remote:$target";
 		print "scp_cmd: $copy_cmd\n";
 		system($copy_cmd) == 0 or die;
 		
