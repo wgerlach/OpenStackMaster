@@ -370,7 +370,7 @@ sub thread_function {
 		
 		
 		# tag new remote image
-		SubmitVM::remote_system($ssh, $remote, "sudo docker tag ".$arg_hash{"docker_image_name"}. " ".$arg_hash{"docker_image_id"});
+		SubmitVM::remote_system($ssh, $remote, "sudo docker tag ".$arg_hash{"docker_image_id"}. " ".$arg_hash{"docker_image_name"});
 		
 		
 		#run container from image
@@ -387,7 +387,7 @@ sub thread_function {
 		
 		SubmitVM::remote_system($ssh, $remote, $docker_run_cmd);
 		
-		#example: vmAWE.pl ${TARGETVMS} --docker_awe_client=awe.tgz --docker_image_id=X --docker_image_name=skyport/awe:latest --docker_container_name --awe_args="--serverurl=http://10.1.12.14:8003 --group=dockertest"
+		#example: vmAWE.pl ${TARGETVMS} --docker_awe_client=awe.tgz --docker_image_id=4bc8c2b4671d --docker_image_name=skyport/awe:latest --awe_args="--serverurl=http://10.1.12.14:8003 --group=dockertest"
 		
 	}
 	
