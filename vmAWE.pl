@@ -381,7 +381,7 @@ sub thread_function {
 		" skyport/awe:latest ".
 		" /usr/local/bin/awe-client ".
 		" --debuglevel=2 ".
-		.$arg_hash{"awe_args"}.
+		$arg_hash{"awe_args"}.
 		" --supported_apps=\* ".
 		" --auto_clean_dir=false ";
 		
