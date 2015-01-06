@@ -22,21 +22,32 @@ my $options_awe_actions = [	"AWE actions (independent, can be combinded)",
 							#"awecfgfile=s"	=> "awe config file to use as template, default: $awecfg_url ",				undef,
 							"deploy=s@"     => "deploy any software on vm",                          undef,
 							"root_deploy=s@"     => "deploy any software on vm as root",             undef,
-							"deploy_target=s"   => "deploy target",                          undef,
+							"deploy_target=s"   => "deploy target",                          		undef,
 							"deploy_data_target=s"   => "specifiy data target, e.g. /home/ubuntu/data/",                          undef,
 							"awecfg=s@"		=> "configure AWE client: [section]key=value?key=value...",                  undef,
 							"k_awecfg=s@"	=> "(KBase) configure AWE client: [section]key=value?key=value...",                  undef,
 							"update"		=> "installs or updates AWE client",					undef,
-							"k_update"		=> "(KBase) updates AWE client",					undef,
-							"id_rsa=s"		=> "copy local file to /root/.ssh/id_rsa",					undef,
+							"k_update"		=> "(KBase) updates AWE client",						undef,
+							"id_rsa=s"		=> "copy local file to /root/.ssh/id_rsa",				undef,
+							"awe_args=s"	=> "arguments passed to awe-client in docker", 			undef,
 							"startawe"		=> "",													undef,
 							"stopawe"		=> "",													undef,
 							"restartawe"	=> "",													undef,
 							"command=s"		=> "pass a command to all VMs, e.g. \"df -h\"",			undef,
-							"copy=s"		=> "scp file over to host, local:remote",			undef,
+							"copy=s"		=> "scp file over to host, local:remote",				undef,
 							"snapshot=s"	=> "awesome feature that is not implemented yet",		undef,
 							"example"		=> "example for executing perl subroutine remotely"	,	undef
 							];
+
+my $options_docker_actions = [	"Docker actions",
+							"docker_awe_client=s"	=> "copy and load image, run awe client container, req all options",		undef
+							];
+
+my $options_docker_options = [	"Docker options",
+							"docker_image_name=s"		=> "image name to use remotely",		undef,
+							"docker_image_id=s"			=> "image ID of new image, needed",					undef
+
+];
 
 #my $options_awe_options = [	"AWE options",
 #							"serverurl=s"	=> "optional, use with action --awecfg",				undef,
@@ -46,7 +57,7 @@ my $options_awe_actions = [	"AWE actions (independent, can be combinded)",
 
 
 my @options_array = @ManageBulkInstances::options_all;
-push(@options_array , $options_awe_actions); #$options_awe_options
+push(@options_array , $options_awe_actions, $options_docker_actions, $options_docker_options); #$options_awe_options
 
 
 
@@ -317,6 +328,71 @@ sub thread_function {
 		
 	}
 	
+	
+	if (defined $arg_hash{"docker_awe_client"}) {
+		
+		unless (defined $arg_hash{"docker_image_name"}) {
+			die "docker_image_name not defined";
+		}
+		unless (defined $arg_hash{"docker_image_id"}) {
+			die "docker_image_id not defined";
+		}
+		
+		unless (defined $arg_hash{"awe_args"}) {
+			die "awe_args not defined, need at least serverurl and group";
+		}
+		
+		
+		my $file = $arg_hash{"docker_awe_client"};
+		
+		unless (-e $file) {
+			die "file $file not found";
+		}
+		
+		
+		# kill remote container
+		SubmitVM::remote_system($ssh, $remote, "sudo docker rm -f awe-worker");
+		
+		# untag old remote image (does not delete)
+		SubmitVM::remote_system($ssh, $remote, "sudo docker rmi -f ".$arg_hash{"docker_image_name"});
+		
+		
+		# load image remotely from local file
+		my $cat = "cat";
+		if ($file =~ /.tgz$/ || $file =~ /.gz$/) {
+			$cat = "zcat";
+		}
+		
+		my $load_cmd = "$cat $file | $ssh $remote sudo docker load";
+		print $load_cmd."\n";
+		
+		system($load_cmd);
+		
+		
+		# tag new remote image
+		SubmitVM::remote_system($ssh, $remote, "sudo docker tag ".$arg_hash{"docker_image_name"}. " ".$arg_hash{"docker_image_id"});
+		
+		
+		#run container from image
+		my $docker_run_cmd = "sudo docker run -d -t -i --name awe-worker".
+		" -v /usr/bin/docker:/usr/bin/docker ".
+		" -v /var/run/docker.sock:/var/run/docker.sock ".
+		" -v /mnt/data/awe/:/mnt/data/awe/ ".
+		" skyport/awe:latest ".
+		" /usr/local/bin/awe-client ".
+		" --debuglevel=2 ".
+		.$arg_hash{"awe_args"}.
+		" --supported_apps=\* ".
+		" --auto_clean_dir=false ";
+		
+		SubmitVM::remote_system($ssh, $remote, $docker_run_cmd);
+		
+		#example: vmAWE.pl ${TARGETVMS} --docker_awe_client=awe.tgz --docker_image_id=X --docker_image_name=skyport/awe:latest --docker_container_name --awe_args="--serverurl=http://10.1.12.14:8003 --group=dockertest"
+		
+	}
+	
+	
+	
 	return;
 }
 
@@ -366,9 +442,20 @@ for (my $i = 1; $i < @$options_awe_actions; $i+=3) {
 	my $option = ${$options_awe_actions}[$i];
 	($option) = split('\=', $option);
 	
-	#print "AWE action checked: $option\n";
+	
 	if (defined $arg_hash{$option}) {
 		print "VM action found: $option\n";
+		$action_count++;
+	}
+}
+
+for (my $i = 1; $i < @$options_docker_actions; $i+=3) {
+	my $option = ${$options_docker_actions}[$i];
+	($option) = split('\=', $option);
+	
+	
+	if (defined $arg_hash{$option}) {
+		print "Docker action found: $option\n";
 		$action_count++;
 	}
 }
